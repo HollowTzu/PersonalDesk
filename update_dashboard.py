@@ -80,45 +80,42 @@ def fetch_yahoo_chart(symbol, range_="10d"):
         return None
 
 
-GITHUB_MODELS_URL = "https://models.github.ai/inference/chat/completions"
-GITHUB_MODELS_MODEL = "openai/gpt-4o-mini"  # cheap/fast, good enough for short desk notes
+GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_MODEL = "gemini-2.5-flash"  # stable, fast, on the free tier
 
 
-def call_github_model(system_prompt, user_prompt, max_tokens=200):
-    """Free AI inference via GitHub Models — uses the same GITHUB_TOKEN already
-    available in GitHub Actions (with `models: read` permission). No separate
-    API key, account, or billing required."""
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("GITHUB_TOKEN not set — skipping AI generation, falling back to plain text.")
+def call_ai_model(system_prompt, user_prompt, max_tokens=200):
+    """AI generation via Google AI Studio's official Gemini free tier.
+    Requires a GEMINI_API_KEY secret — a real key from Google (aistudio.google.com),
+    not borrowed from any subscription product. This is the intended, sanctioned
+    use case for that key, not a workaround."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("GEMINI_API_KEY not set — skipping AI generation, falling back to plain text.")
         return None
 
+    url = GEMINI_URL_TEMPLATE.format(model=GEMINI_MODEL)
     payload = json.dumps({
-        "model": GITHUB_MODELS_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.4,
-        "max_tokens": max_tokens,
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": max_tokens},
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        GITHUB_MODELS_URL,
+        url,
         data=payload,
         headers={
-            "Authorization": f"Bearer {token}",
+            "x-goog-api-key": api_key,
             "Content-Type": "application/json",
-            "Accept": "application/vnd.github+json",
         },
         method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             d = json.loads(r.read())
-        return d["choices"][0]["message"]["content"]
+        return d["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"GitHub Models call failed: {e}")
+        print(f"Gemini call failed: {e}")
         return None
 
 
@@ -219,7 +216,7 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines):
         f"Today's macro headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
     )
 
-    raw = call_github_model(system_prompt, user_prompt, max_tokens=150)
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=150)
     if raw:
         try:
             cleaned = raw.strip().strip("`")
@@ -359,7 +356,7 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
         f"Today's headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
     )
 
-    raw = call_github_model(system_prompt, user_prompt, max_tokens=180)
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=180)
     if raw:
         return raw.strip()
 
