@@ -1,53 +1,54 @@
+import os
+import urllib.request
 import json
-import requests
-from bs4 import BeautifulSoup
-from typing import Dict
 
-# -------------------------------------------------------------------
-# TradingEconomics Scraper for Live Prices
-# -------------------------------------------------------------------
-TE_URLS = {
-    "GOLD (XAUUSD)": "https://tradingeconomics.com/commodity/gold",
-    "SILVER (XAGUSD)": "https://tradingeconomics.com/commodity/silver",
-    "CRUDE OIL (WTI)": "https://tradingeconomics.com/commodity/crude-oil",
-    "NQ (NASDAQ 100)": "https://tradingeconomics.com/us/nasdaq-100",
-    "S&P 500 (ES)": "https://tradingeconomics.com/us/sp-500",
-    "BTCUSD (BITCOIN)": "https://tradingeconomics.com/crypto/bitcoin"
-}
+def generate_ai_desk_note(macro_headlines, te_calendar_event):
+    """
+    Sends live feeds to an LLM API (e.g., OpenAI) with a strict institutional 
+    prompt to generate the session desk note dynamically.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return (
+            "<b>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> Fallback mode — OPENAI_API_KEY not found. "
+            f"Latest market pulse: {macro_headlines[0]}<br><br>"
+            "<b>STRUCTURAL PHYSICAL DEFICIT:</b> Sustained industrial demand and reserve accumulation remain active."
+        )
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
+    prompt = f"""
+    You are an institutional trading desk macro strategist. 
+    Analyze the following live inputs:
+    - Latest Macro Headine 1: {macro_headlines[0]}
+    - Latest Macro Headine 2: {macro_headlines[1]}
+    - Upcoming High-Impact Calendar Event: {te_calendar_event or 'None'}
 
-def fetch_live_prices() -> Dict[str, str]:
-    prices = {}
+    Write the "INSTITUTIONAL SESSION DESK NOTE — MACRO REGIME" section consisting of two distinct, bolded paragraphs:
+    1. GEOPOLITICAL & RATE TRANSMISSION: Focus on central bank rate expectations, real yields, and geopolitical risk factors.
+    2. STRUCTURAL PHYSICAL DEFICIT: Focus on structural supply shortages, physical commodities, or tech/industrial capital flows.
     
-    for name, url in TE_URLS.items():
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=10)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                
-                # TradingEconomics embeds the primary price in the #p element
-                price_elem = soup.find("id", id="p") or soup.select_one("#p")
-                
-                if price_elem:
-                    raw_price = price_elem.text.strip().replace(",", "")
-                    val = float(raw_price)
-                    prices[name] = f"${val:,.2f}"
-                else:
-                    # Fallback lookup in price table
-                    price_table_cell = soup.select_one("table.table td#p")
-                    if price_table_cell:
-                        val = float(price_table_cell.text.strip().replace(",", ""))
-                        prices[name] = f"${val:,.2f}"
-                    else:
-                        prices[name] = "FETCH_FAILED"
-            else:
-                prices[name] = "FETCH_FAILED"
-        except Exception as e:
-            print(f"[ERROR] Failed scraping {name} from TradingEconomics: {e}")
-            prices[name] = "FETCH_FAILED"
+    Keep the tone sharp, professional, concise, and institutional. Format output strictly as two HTML paragraphs with appropriate bold headers.
+    """
 
-    print(f"[DEBUG] TradingEconomics Fetched Prices:\n{json.dumps(prices, indent=2)}")
-    return prices
+    payload = {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3
+    }
+    
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        },
+        method="POST"
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            return res_data['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        print(f"AI Generation failed: {e}")
+        return "<b>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> API generation error. Desk note running on default parameters.<br><br><b>STRUCTURAL PHYSICAL DEFICIT:</b> Core metrics unchanged."
