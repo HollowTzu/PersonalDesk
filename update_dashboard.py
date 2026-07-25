@@ -80,21 +80,46 @@ def fetch_yahoo_chart(symbol, range_="10d"):
         return None
 
 
-def fetch_te_calendar_highlight(api_key):
-    """Optional enrichment: most relevant upcoming high-importance event from
-    Trading Economics. Only runs if TE_API_KEY is set as a GitHub Secret —
-    never hardcode a key directly in this file."""
-    if not api_key:
+GITHUB_MODELS_URL = "https://models.github.ai/inference/chat/completions"
+GITHUB_MODELS_MODEL = "openai/gpt-4o-mini"  # cheap/fast, good enough for short desk notes
+
+
+def call_github_model(system_prompt, user_prompt, max_tokens=200):
+    """Free AI inference via GitHub Models — uses the same GITHUB_TOKEN already
+    available in GitHub Actions (with `models: read` permission). No separate
+    API key, account, or billing required."""
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("GITHUB_TOKEN not set — skipping AI generation, falling back to plain text.")
         return None
+
+    payload = json.dumps({
+        "model": GITHUB_MODELS_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.4,
+        "max_tokens": max_tokens,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        GITHUB_MODELS_URL,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/vnd.github+json",
+        },
+        method="POST",
+    )
     try:
-        url = f"https://api.tradingeconomics.com/calendar?c={api_key}&importance=3"
-        events = fetch_json(url, timeout=15)
-        if events:
-            e = events[0]
-            return f"{e.get('Event','')} ({e.get('Country','')}) — {e.get('Date','')[:10]}"
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read())
+        return d["choices"][0]["message"]["content"]
     except Exception as e:
-        print(f"TradingEconomics fetch failed (check TE_API_KEY secret): {e}")
-    return None
+        print(f"GitHub Models call failed: {e}")
+        return None
 
 
 def fetch_latest_macro_headlines():
@@ -144,66 +169,107 @@ def classify(pct_change, cot_delta=None):
     return "NEUTRAL", "badge-neutral"  # price and positioning disagree — no clean call
 
 
-def build_bias_row(asset_name, price_data, cot_data=None, te_note=None):
+def compute_qualifier(bias, pct):
+    """Badge qualifier word — a deterministic function of real move size,
+    not an AI or human judgment call. Thresholds are named so they're easy
+    to retune."""
+    if bias == "NEUTRAL":
+        return "RANGE"
+    magnitude = abs(pct)
+    if magnitude >= 1.5:
+        return "STRONG"
+    if magnitude >= 0.75:
+        return "MODERATE"
+    return "SHORT-TERM"
+
+
+def fallback_driver_text(asset_name, pct, cot_data):
+    """Used only if the AI call fails — still real numbers, just unstyled."""
+    parts = [f"{asset_name} is {'+' if pct >= 0 else ''}{pct:.2f}% vs. prior close."]
+    if cot_data:
+        direction = "increased" if cot_data['delta'] > 0 else "decreased" if cot_data['delta'] < 0 else "was flat"
+        parts.append(f"Managed Money net {direction} by {abs(cot_data['delta']):,} contracts w/w.")
+    return " ".join(parts)
+
+
+def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines):
+    """Calls GitHub Models to write the driver + invalidation sentences,
+    grounded strictly in the real data passed in. Falls back to plain
+    computed text (never fabricated headlines) if the call fails or
+    returns something we can't parse."""
+    cot_line = ""
+    if cot_data:
+        direction = "increased" if cot_data['delta'] > 0 else "decreased" if cot_data['delta'] < 0 else "was flat"
+        cot_line = (f"Managed Money net {direction} by {abs(cot_data['delta']):,} contracts w/w "
+                    f"as of {cot_data['report_date']} (current net {cot_data['net']:+,}).")
+
+    system_prompt = (
+        "You write one-line institutional desk notes for a personal trading dashboard. "
+        "Use only the DATA given — never invent a specific news event, price level, or "
+        "cause that isn't in the DATA. If the headlines aren't clearly relevant to this "
+        "asset, describe the move in terms of price action/positioning instead of forcing "
+        "a news connection. Confident, terse, sell-side tone — no hedge words like 'might' "
+        "or 'could', no disclaimers. Output ONLY valid JSON, no markdown fences: "
+        '{"driver": "one sentence", "invalidation": "one sentence"}'
+    )
+    user_prompt = (
+        f"Asset: {asset_name}\n"
+        f"Price change vs prior close: {pct:+.2f}%\n"
+        f"{cot_line}\n"
+        f"Today's macro headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
+    )
+
+    raw = call_github_model(system_prompt, user_prompt, max_tokens=150)
+    if raw:
+        try:
+            cleaned = raw.strip().strip("`")
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:].strip()
+            parsed = json.loads(cleaned)
+            if "driver" in parsed and "invalidation" in parsed:
+                return parsed["driver"], parsed["invalidation"]
+        except Exception as e:
+            print(f"Could not parse AI response for {asset_name}, using fallback: {e}")
+
+    return fallback_driver_text(asset_name, pct, cot_data), "Decisive break of the recent trading range."
+
+
+def build_bias_row(asset_name, price_data, cot_data=None, headlines=None):
     if price_data is None:
         return None  # don't fabricate a row for data we couldn't fetch
 
     pct = price_data['pct_change']
     cot_delta = cot_data['delta'] if cot_data else None
     bias, badge_class = classify(pct, cot_delta)
+    qualifier = compute_qualifier(bias, pct)
 
-    driver_parts = [f"{asset_name} is {'+' if pct >= 0 else ''}{pct:.2f}% vs. prior close."]
-    if cot_data:
-        direction = "increased" if cot_data['delta'] > 0 else "decreased" if cot_data['delta'] < 0 else "was flat"
-        driver_parts.append(
-            f"Managed Money net {direction} by {abs(cot_data['delta']):,} contracts "
-            f"w/w as of {cot_data['report_date']} (net {cot_data['net']:+,})."
-        )
-        if (pct >= PRICE_MOVE_THRESHOLD and cot_data['delta'] < 0) or (pct <= -PRICE_MOVE_THRESHOLD and cot_data['delta'] > 0):
-            driver_parts.append("Price and positioning are diverging — treated as NEUTRAL rather than forcing a call.")
-    if te_note:
-        driver_parts.append(f"Watch: {te_note}")
-
-    high = price_data.get('recent_high')
-    low = price_data.get('recent_low')
-    if bias == "BEARISH" and high:
-        invalidation = f"Reclaim back above the recent high (~{high:,.2f})."
-    elif bias == "BULLISH" and low:
-        invalidation = f"Breakdown below the recent low (~{low:,.2f})."
-    elif high and low:
-        invalidation = f"Decisive break of the recent range (~{low:,.2f}-{high:,.2f})."
-    else:
-        invalidation = "Decisive break of the recent trading range."
+    driver, invalidation = generate_ai_driver_and_invalidation(
+        asset_name, pct, cot_data, headlines or ("", "")
+    )
 
     return {
         "asset": asset_name,
-        "bias": bias,
+        "bias": f"{bias} · {qualifier}",
         "biasClass": badge_class,
-        "horizon": f"Daily bias — computed from live data, run-updated",
-        "driver": " ".join(driver_parts),
+        "horizon": "Daily bias — AI-written, regenerated on live data each run",
+        "driver": driver,
         "invalidation": invalidation,
     }
 
 
-def compute_all_bias_rows():
-    te_key = os.environ.get("TE_API_KEY")
-    te_note = fetch_te_calendar_highlight(te_key)
-
-    gold_cot = fetch_cot_managed_money("GOLD - COMMODITY EXCHANGE")
-    silver_cot = fetch_cot_managed_money("SILVER - COMMODITY EXCHANGE")
-
+def compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot):
     fetches = {
         "NQ (NASDAQ 100)": (fetch_yahoo_chart("^NDX"), None),
         "S&P 500 (ES)": (fetch_yahoo_chart("^GSPC"), None),
-        "GOLD (XAUUSD)": (fetch_yahoo_chart("GC=F"), gold_cot),
-        "SILVER (XAGUSD)": (fetch_yahoo_chart("SI=F"), silver_cot),
+        "GOLD (XAUUSD)": (gold_price, gold_cot),
+        "SILVER (XAGUSD)": (silver_price, silver_cot),
         "BTCUSD (BITCOIN)": (fetch_coingecko_btc(), None),
         "CRUDE OIL (WTI)": (fetch_yahoo_chart("CL=F"), None),
     }
 
     rows = []
     for asset, (price_data, cot_data) in fetches.items():
-        row = build_bias_row(asset, price_data, cot_data, te_note if asset in ("GOLD (XAUUSD)", "SILVER (XAGUSD)") else None)
+        row = build_bias_row(asset, price_data, cot_data, headlines)
         if row:
             rows.append(row)
         else:
@@ -256,7 +322,53 @@ def update_bias_cards(soup, bias_rows):
     print(f"Updated {updated_count} of {len(cards)} bias cards with live data.")
 
 
-def update_desk_note(soup, geo_headline, supply_headline):
+def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines):
+    """AI-written intraday bias / swing projection paragraph for the desk note.
+    Hard constraint in the prompt: only reference the specific price levels
+    given below (real recent highs/lows from live data) — never invent a
+    level that isn't in DATA. 'Liquidity pool' framing = these real recent
+    range extremes, which is the standard textbook definition (resting stops
+    cluster around prior highs/lows), not a claim of actual order-book data."""
+    if not (gold_price and silver_price):
+        return ("Live price data unavailable this run — intraday liquidity map "
+                "could not be generated. Check next scheduled update.")
+
+    g_delta = gold_cot['delta'] if gold_cot else None
+    s_delta = silver_cot['delta'] if silver_cot else None
+    smt_line = ""
+    if g_delta is not None and s_delta is not None:
+        g_dir = "up" if g_delta > 0 else "down" if g_delta < 0 else "flat"
+        s_dir = "up" if s_delta > 0 else "down" if s_delta < 0 else "flat"
+        agree = (g_delta > 0) == (s_delta > 0) if (g_delta != 0 and s_delta != 0) else False
+        smt_line = f"Gold Managed Money w/w: {g_dir}. Silver Managed Money w/w: {s_dir}. Positioning {'confirms' if agree else 'is diverging'} across the two metals."
+
+    system_prompt = (
+        "You write a 2-3 sentence intraday bias / swing projection note for a personal "
+        "trading dashboard, in the style of a terse institutional session note. "
+        "HARD RULE: the only specific price levels you may mention are the ones given "
+        "in DATA below — never state a price level that isn't listed there. Frame the "
+        "recent high/low as resting liquidity (where stops typically cluster) — this is "
+        "standard market-structure framing, not a claim of live order-book data. If SMT "
+        "(gold vs silver positioning divergence) is noted in DATA, reference it briefly. "
+        "No hedge words, no disclaimers, no markdown — plain sentences only."
+    )
+    user_prompt = (
+        f"GOLD: price {gold_price['price']:.2f}, recent range {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}\n"
+        f"SILVER: price {silver_price['price']:.2f}, recent range {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}\n"
+        f"{smt_line}\n"
+        f"Today's headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
+    )
+
+    raw = call_github_model(system_prompt, user_prompt, max_tokens=180)
+    if raw:
+        return raw.strip()
+
+    # fallback — still real numbers, just unstyled
+    return (f"Gold liquidity resting between {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}; "
+            f"silver between {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}. {smt_line}")
+
+
+def update_desk_note(soup, geo_headline, liquidity_paragraph):
     desk_note_header = soup.find("div", string=lambda t: t and "INSTITUTIONAL SESSION DESK NOTE" in t)
     if desk_note_header and desk_note_header.parent:
         parent_divs = desk_note_header.parent.find_all("div")
@@ -264,7 +376,7 @@ def update_desk_note(soup, geo_headline, supply_headline):
         if content_div:
             new_html = (
                 f"<b>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> {geo_headline}<br><br>"
-                f"<b>STRUCTURAL PHYSICAL DEFICIT:</b> {supply_headline}"
+                f"<b>INTRADAY BIAS &amp; LIQUIDITY MAP:</b> {liquidity_paragraph}"
             )
             content_div.clear()
             content_div.append(BeautifulSoup(new_html, 'html.parser'))
@@ -277,11 +389,19 @@ def generate_updated_dashboard():
     with open('index.html', 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f.read(), 'html.parser')
 
-    bias_rows = compute_all_bias_rows()
+    headlines = fetch_latest_macro_headlines()
+
+    # fetch gold/silver once, share between bias cards and the desk note paragraph
+    gold_price = fetch_yahoo_chart("GC=F")
+    silver_price = fetch_yahoo_chart("SI=F")
+    gold_cot = fetch_cot_managed_money("GOLD - COMMODITY EXCHANGE")
+    silver_cot = fetch_cot_managed_money("SILVER - COMMODITY EXCHANGE")
+
+    bias_rows = compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot)
     update_bias_cards(soup, bias_rows)
 
-    geo_headline, supply_headline = fetch_latest_macro_headlines()
-    update_desk_note(soup, geo_headline, supply_headline)
+    liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines)
+    update_desk_note(soup, headlines[0], liquidity_paragraph)
 
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(str(soup))
