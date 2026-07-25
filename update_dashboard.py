@@ -54,30 +54,75 @@ def fetch_coingecko_btc():
 
 
 def fetch_yahoo_chart(symbol, range_="10d"):
-    """Price + % change + recent high/low via Yahoo's public chart endpoint.
-    Runs server-side (this script, not a browser), so the CORS restriction
-    that blocks this from the client-side dashboard doesn't apply here."""
+    """Price + % change + recent high/low + daily up/down-volume proxy via
+    Yahoo's public chart endpoint. Runs server-side (this script, not a
+    browser), so the CORS restriction that blocks this from the client-side
+    dashboard doesn't apply here."""
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range={range_}"
         d = fetch_json(url)
         result = d['chart']['result'][0]
         meta = result['meta']
+        quote = result['indicators']['quote'][0]
         price = meta.get('regularMarketPrice')
         prev_close = meta.get('previousClose') or meta.get('chartPreviousClose')
-        closes = [c for c in result['indicators']['quote'][0]['close'] if c is not None]
-        highs = [h for h in result['indicators']['quote'][0]['high'] if h is not None]
-        lows = [l for l in result['indicators']['quote'][0]['low'] if l is not None]
+        opens = quote.get('open', [])
+        closes = quote.get('close', [])
+        highs = [h for h in quote.get('high', []) if h is not None]
+        lows = [l for l in quote.get('low', []) if l is not None]
+        volumes = quote.get('volume', [])
         if price is None or prev_close is None:
             return None
+
+        # daily bars, paired up, for the volume-delta proxy below
+        bars = [
+            {'open': o, 'close': c, 'volume': v}
+            for o, c, v in zip(opens, closes, volumes)
+            if o is not None and c is not None and v is not None
+        ]
+
         return {
             'price': price,
             'pct_change': (price - prev_close) / prev_close * 100,
             'recent_high': max(highs) if highs else price,
             'recent_low': min(lows) if lows else price,
+            'bars': bars,
         }
     except Exception as e:
         print(f"Yahoo fetch failed for '{symbol}': {e}")
         return None
+
+
+def compute_volume_delta_zone(price_data):
+    """Approximates cumulative volume delta from daily OHLCV: green-day
+    volume counted as buying pressure, red-day volume as selling pressure,
+    summed across the lookback window. This is NOT true tick-level CVD
+    (that needs bid/ask-tagged trade data we don't have) — it's a daily
+    up/down-volume proxy. Also flags the price zone where volume was
+    heaviest, as a rough proxy for where size has been transacting
+    (a real 'accumulation area' needs a true volume profile, which we
+    don't have either — this is the closest honest approximation from
+    daily bars)."""
+    bars = price_data.get('bars') if price_data else None
+    if not bars or len(bars) < 3:
+        return None
+
+    cvd = 0
+    heaviest_vol = -1
+    heaviest_zone_mid = None
+    for b in bars:
+        signed_vol = b['volume'] if b['close'] >= b['open'] else -b['volume']
+        cvd += signed_vol
+        if b['volume'] > heaviest_vol:
+            heaviest_vol = b['volume']
+            heaviest_zone_mid = (b['open'] + b['close']) / 2
+
+    trend = "accumulating (net buy-volume)" if cvd > 0 else "distributing (net sell-volume)" if cvd < 0 else "flat"
+    return {
+        'cvd_trend': trend,
+        'cvd_value': cvd,
+        'heaviest_volume_price': heaviest_zone_mid,
+    }
 
 
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -322,9 +367,9 @@ def update_bias_cards(soup, bias_rows):
 def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines):
     """AI-written intraday bias / swing projection paragraph for the desk note.
     Hard constraint in the prompt: only reference the specific price levels
-    given below (real recent highs/lows from live data) — never invent a
-    level that isn't in DATA. 'Liquidity pool' framing = these real recent
-    range extremes, which is the standard textbook definition (resting stops
+    given below (real recent highs/lows, plus the volume-delta proxy zone —
+    never invent a level that isn't in DATA. 'Liquidity pool' framing = real
+    recent range extremes, standard textbook definition (resting stops
     cluster around prior highs/lows), not a claim of actual order-book data."""
     if not (gold_price and silver_price):
         return ("Live price data unavailable this run — intraday liquidity map "
@@ -339,19 +384,30 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
         agree = (g_delta > 0) == (s_delta > 0) if (g_delta != 0 and s_delta != 0) else False
         smt_line = f"Gold Managed Money w/w: {g_dir}. Silver Managed Money w/w: {s_dir}. Positioning {'confirms' if agree else 'is diverging'} across the two metals."
 
+    gold_cvd = compute_volume_delta_zone(gold_price)
+    silver_cvd = compute_volume_delta_zone(silver_price)
+    cvd_line = ""
+    if gold_cvd:
+        cvd_line += f"Gold volume-delta proxy: {gold_cvd['cvd_trend']}, heaviest-volume price zone ~{gold_cvd['heaviest_volume_price']:.2f}. "
+    if silver_cvd:
+        cvd_line += f"Silver volume-delta proxy: {silver_cvd['cvd_trend']}, heaviest-volume price zone ~{silver_cvd['heaviest_volume_price']:.2f}."
+
     system_prompt = (
         "You write a 2-3 sentence intraday bias / swing projection note for a personal "
         "trading dashboard, in the style of a terse institutional session note. "
         "HARD RULE: the only specific price levels you may mention are the ones given "
         "in DATA below — never state a price level that isn't listed there. Frame the "
-        "recent high/low as resting liquidity (where stops typically cluster) — this is "
-        "standard market-structure framing, not a claim of live order-book data. If SMT "
-        "(gold vs silver positioning divergence) is noted in DATA, reference it briefly. "
-        "No hedge words, no disclaimers, no markdown — plain sentences only."
+        "recent high/low as resting liquidity (where stops typically cluster), and the "
+        "'heaviest-volume price zone' as where accumulation/distribution has concentrated "
+        "recently — this is standard market-structure framing from real daily volume data, "
+        "not a claim of tick-level order-book data. If SMT (gold vs silver positioning "
+        "divergence) is noted in DATA, reference it briefly. No hedge words, no "
+        "disclaimers, no markdown — plain sentences only."
     )
     user_prompt = (
         f"GOLD: price {gold_price['price']:.2f}, recent range {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}\n"
         f"SILVER: price {silver_price['price']:.2f}, recent range {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}\n"
+        f"{cvd_line}\n"
         f"{smt_line}\n"
         f"Today's headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
     )
@@ -362,7 +418,8 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
 
     # fallback — still real numbers, just unstyled
     return (f"Gold liquidity resting between {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}; "
-            f"silver between {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}. {smt_line}")
+            f"silver between {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}. "
+            f"{cvd_line} {smt_line}")
 
 
 def update_desk_note(soup, geo_headline, liquidity_paragraph):
