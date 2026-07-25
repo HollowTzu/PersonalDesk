@@ -11,8 +11,6 @@ permissions:
                      # created after Feb 2023, so `git push` fails silently
                      # (job succeeds, commit exists locally, push is rejected)
                      # without this explicit grant.
-  models: read       # <-- REQUIRED for GitHub Models AI inference calls
-                      # (free, uses the same GITHUB_TOKEN, no new secret needed)
 
 jobs:
   update-dashboard:
@@ -32,7 +30,7 @@ jobs:
 
       - name: Run Dashboard Update Script
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python update_dashboard.py
 
       - name: Commit and Push Changes
