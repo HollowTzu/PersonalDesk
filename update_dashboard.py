@@ -1,4 +1,5 @@
 import os
+import time
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -25,8 +26,9 @@ def fetch_json(url, timeout=15):
 def fetch_cot_managed_money(search_term):
     """Latest + prior week Managed Money net position from CFTC (Disaggregated Futures-Only)."""
     where = f"upper(market_and_exchange_names) like upper('%{search_term}%')"
+    order = "report_date_as_yyyy_mm_dd DESC"
     url = (f"https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
-           f"?$where={urllib.parse.quote(where)}&$order=report_date_as_yyyy_mm_dd DESC&$limit=2")
+           f"?$where={urllib.parse.quote(where)}&$order={urllib.parse.quote(order)}&$limit=2")
     try:
         rows = fetch_json(url)
         if len(rows) < 2:
@@ -125,11 +127,49 @@ def compute_volume_delta_zone(price_data):
     }
 
 
-GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-GEMINI_MODEL = "gemini-2.5-flash"  # stable, fast, on the free tier
+GEMINI_LIST_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_GENERATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+_gemini_model_cache = {"model": None, "checked": False}
 
 
-def call_ai_model(system_prompt, user_prompt, max_tokens=200):
+def discover_gemini_model(api_key):
+    """Model names in this space go stale every few months (2.0 retired in
+    March 2026, 3.x shipping since). Rather than hardcode a guess that will
+    inevitably 404 again later, ask Google's own ListModels endpoint what's
+    actually valid for this key right now, and use that. Cached per run so
+    we only call this once, not once per generation call."""
+    if _gemini_model_cache["checked"]:
+        return _gemini_model_cache["model"]
+    _gemini_model_cache["checked"] = True
+
+    try:
+        req = urllib.request.Request(
+            GEMINI_LIST_MODELS_URL,
+            headers={"x-goog-api-key": api_key},
+        )
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read())
+        candidates = [
+            m["name"].removeprefix("models/")
+            for m in d.get("models", [])
+            if "generateContent" in m.get("supportedGenerationMethods", [])
+            and "flash" in m.get("name", "").lower()
+            and "vision" not in m.get("name", "").lower()
+            and "image" not in m.get("name", "").lower()
+        ]
+        if candidates:
+            chosen = sorted(candidates)[-1]  # prefer the lexically-latest flash variant
+            print(f"Gemini model discovered for this run: {chosen}")
+            _gemini_model_cache["model"] = chosen
+            return chosen
+        print("ListModels returned no usable flash model — check GEMINI_API_KEY / account access.")
+    except Exception as e:
+        print(f"Gemini ListModels call failed: {e}")
+    return None
+
+
+def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
     """AI generation via Google AI Studio's official Gemini free tier.
     Requires a GEMINI_API_KEY secret — a real key from Google (aistudio.google.com),
     not borrowed from any subscription product. This is the intended, sanctioned
@@ -139,7 +179,11 @@ def call_ai_model(system_prompt, user_prompt, max_tokens=200):
         print("GEMINI_API_KEY not set — skipping AI generation, falling back to plain text.")
         return None
 
-    url = GEMINI_URL_TEMPLATE.format(model=GEMINI_MODEL)
+    model = discover_gemini_model(api_key)
+    if not model:
+        return None
+
+    url = GEMINI_GENERATE_URL_TEMPLATE.format(model=model)
     payload = json.dumps({
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
@@ -159,6 +203,13 @@ def call_ai_model(system_prompt, user_prompt, max_tokens=200):
         with urllib.request.urlopen(req, timeout=30) as r:
             d = json.loads(r.read())
         return d["candidates"][0]["content"]["parts"][0]["text"]
+    except urllib.error.HTTPError as e:
+        if e.code == 429 and _retry:
+            print("Gemini 429 (rate limited) — backing off 15s and retrying once.")
+            time.sleep(15)
+            return call_ai_model(system_prompt, user_prompt, max_tokens, _retry=False)
+        print(f"Gemini call failed: HTTP {e.code}: {e.reason}")
+        return None
     except Exception as e:
         print(f"Gemini call failed: {e}")
         return None
@@ -316,6 +367,7 @@ def compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_
             rows.append(row)
         else:
             print(f"SKIPPED '{asset}' — no live price data available this run, card left unchanged.")
+        time.sleep(3)  # spread out Gemini calls — avoids bursting the free-tier per-minute limit
     return rows
 
 
