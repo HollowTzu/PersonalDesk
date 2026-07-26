@@ -540,8 +540,8 @@ def update_desk_note(soup, geo_summary, liquidity_paragraph):
 
             new_html = (
                 f"<div style='font-size:9.5px; color:#8a8f88; margin-bottom:6px;'>As of {timestamp}</div>"
-                f"<b>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> {geo_summary}<br><br>"
-                f"<b>INTRADAY BIAS &amp; LIQUIDITY MAP:</b> {liquidity_paragraph}"
+                f"<b style='color:#9BE7ED;'>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> {geo_summary}<br><br>"
+                f"<b style='color:#9BE7ED;'>INTRADAY BIAS &amp; LIQUIDITY MAP:</b> {liquidity_paragraph}"
             )
             content_div.clear()
             content_div.append(BeautifulSoup(new_html, 'html.parser'))
