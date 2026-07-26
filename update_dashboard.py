@@ -4,6 +4,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import json
+from datetime import datetime
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 
@@ -150,14 +151,20 @@ def discover_gemini_model(api_key):
         )
         with urllib.request.urlopen(req, timeout=20) as r:
             d = json.loads(r.read())
-        candidates = [
+        excluded_terms = ["vision", "image", "preview", "experimental", "exp", "omni", "audio", "live", "thinking"]
+        all_flash = [
             m["name"].removeprefix("models/")
             for m in d.get("models", [])
             if "generateContent" in m.get("supportedGenerationMethods", [])
             and "flash" in m.get("name", "").lower()
-            and "vision" not in m.get("name", "").lower()
-            and "image" not in m.get("name", "").lower()
         ]
+        # prefer stable, non-preview models — preview/experimental/omni variants
+        # tend to carry much tighter free-tier rate limits, which is what
+        # caused every call to 429 when 'gemini-omni-flash-preview' got picked
+        stable = [n for n in all_flash if not any(term in n.lower() for term in excluded_terms)]
+        candidates = stable if stable else all_flash
+        if not stable and all_flash:
+            print("No stable flash model found — falling back to a preview/experimental variant (expect tighter rate limits).")
         if candidates:
             chosen = sorted(candidates)[-1]  # prefer the lexically-latest flash variant
             print(f"Gemini model discovered for this run: {chosen}")
@@ -215,21 +222,62 @@ def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
         return None
 
 
-def fetch_latest_macro_headlines():
+RSS_SOURCES = [
+    ("Yahoo Finance", "https://finance.yahoo.com/news/rssindex"),
+    ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/topstories/"),
+    ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+]
+
+
+def fetch_headlines_from(name, url, max_items=4):
     try:
-        req = urllib.request.Request("https://finance.yahoo.com/news/rssindex", headers=UA)
+        req = urllib.request.Request(url, headers=UA)
         with urllib.request.urlopen(req, timeout=15) as response:
             xml_data = response.read()
         root = ET.fromstring(xml_data)
-        items = root.findall('./channel/item')
-        if len(items) >= 2:
-            return items[0].find('title').text, items[1].find('title').text
+        items = root.findall('./channel/item')[:max_items]
+        return [i.find('title').text for i in items if i.find('title') is not None]
     except Exception as e:
-        print(f"Error fetching RSS news: {e}")
-    return (
-        "Live headline feed unavailable this run — showing last-known macro context.",
-        "Precious metals positioning continues to reflect the structural COT trend tracked above."
+        print(f"RSS fetch failed for {name}: {e}")
+        return []
+
+
+def fetch_all_headlines():
+    """Pull from multiple free financial RSS sources — one dead feed doesn't
+    take down the rest. Returns a flat list of real headlines for the AI to
+    summarize from (never fabricated, always traceable to a real source)."""
+    all_headlines = []
+    for name, url in RSS_SOURCES:
+        headlines = fetch_headlines_from(name, url)
+        all_headlines.extend(headlines)
+        print(f"{name}: {len(headlines)} headlines fetched.")
+    return all_headlines
+
+
+def summarize_geopolitical_rate_context(headlines):
+    """AI-summarized synthesis across real headlines — replaces the old
+    behavior of just using headline[0] verbatim, which was often irrelevant
+    (e.g. a random corporate strategy article) since it wasn't filtered for
+    actual relevance to rates/geopolitics/precious metals at all."""
+    if not headlines:
+        return "Live headline feeds unavailable this run — no fresh geopolitical/rate context to summarize."
+
+    system_prompt = (
+        "You write a 2-3 sentence institutional desk note summarizing the current "
+        "geopolitical and interest-rate backdrop and how it's affecting markets — "
+        "gold, the dollar, and broader risk sentiment specifically. Base this ONLY "
+        "on the real headlines given below; if none are genuinely relevant to "
+        "geopolitics, rates, or macro conditions, say the news flow is quiet on "
+        "that front rather than forcing a connection to an unrelated headline. "
+        "Confident, terse, sell-side tone. No hedge words, no disclaimers, no markdown."
     )
+    user_prompt = "Today's headlines across multiple sources:\n" + "\n".join(f"- {h}" for h in headlines)
+
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=180)
+    if raw:
+        return raw.strip()
+    # fallback: at least show a real headline rather than nothing, clearly labeled as unsummarized
+    return f"(Unsummarized — AI unavailable this run) Recent headline: \"{headlines[0]}\""
 
 
 # ---------------------------------------------------------------------------
@@ -305,11 +353,12 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines):
         "or 'could', no disclaimers. Output ONLY valid JSON, no markdown fences: "
         '{"driver": "one sentence", "invalidation": "one sentence"}'
     )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
     user_prompt = (
         f"Asset: {asset_name}\n"
         f"Price change vs prior close: {pct:+.2f}%\n"
         f"{cot_line}\n"
-        f"Today's macro headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
+        f"Today's macro headlines: {headline_sample}"
     )
 
     raw = call_ai_model(system_prompt, user_prompt, max_tokens=150)
@@ -337,7 +386,7 @@ def build_bias_row(asset_name, price_data, cot_data=None, headlines=None):
     qualifier = compute_qualifier(bias, pct)
 
     driver, invalidation = generate_ai_driver_and_invalidation(
-        asset_name, pct, cot_data, headlines or ("", "")
+        asset_name, pct, cot_data, headlines or []
     )
 
     return {
@@ -431,10 +480,11 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
     s_delta = silver_cot['delta'] if silver_cot else None
     smt_line = ""
     if g_delta is not None and s_delta is not None:
-        g_dir = "up" if g_delta > 0 else "down" if g_delta < 0 else "flat"
-        s_dir = "up" if s_delta > 0 else "down" if s_delta < 0 else "flat"
+        g_dir = "increased" if g_delta > 0 else "decreased" if g_delta < 0 else "was unchanged"
+        s_dir = "increased" if s_delta > 0 else "decreased" if s_delta < 0 else "was unchanged"
         agree = (g_delta > 0) == (s_delta > 0) if (g_delta != 0 and s_delta != 0) else False
-        smt_line = f"Gold Managed Money w/w: {g_dir}. Silver Managed Money w/w: {s_dir}. Positioning {'confirms' if agree else 'is diverging'} across the two metals."
+        smt_line = (f"Gold's Managed Money net position {g_dir} week-over-week; silver's {s_dir}. "
+                    f"Positioning {'confirms' if agree else 'is diverging'} across the two metals.")
 
     gold_cvd = compute_volume_delta_zone(gold_price)
     silver_cvd = compute_volume_delta_zone(silver_price)
@@ -452,16 +502,17 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
         "recent high/low as resting liquidity (where stops typically cluster), and the "
         "'heaviest-volume price zone' as where accumulation/distribution has concentrated "
         "recently — this is standard market-structure framing from real daily volume data, "
-        "not a claim of tick-level order-book data. If SMT (gold vs silver positioning "
-        "divergence) is noted in DATA, reference it briefly. No hedge words, no "
-        "disclaimers, no markdown — plain sentences only."
+        "not a claim of tick-level order-book data. If positioning divergence is noted in "
+        "DATA, reference it briefly, in plain English (not jargon like 'w/w'). No hedge "
+        "words, no disclaimers, no markdown — plain sentences only."
     )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
     user_prompt = (
         f"GOLD: price {gold_price['price']:.2f}, recent range {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}\n"
         f"SILVER: price {silver_price['price']:.2f}, recent range {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}\n"
         f"{cvd_line}\n"
         f"{smt_line}\n"
-        f"Today's headlines: \"{headlines[0]}\" / \"{headlines[1]}\""
+        f"Today's headlines: {headline_sample}"
     )
 
     raw = call_ai_model(system_prompt, user_prompt, max_tokens=180)
@@ -474,14 +525,22 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
             f"{cvd_line} {smt_line}")
 
 
-def update_desk_note(soup, geo_headline, liquidity_paragraph):
+def update_desk_note(soup, geo_summary, liquidity_paragraph):
     desk_note_header = soup.find("div", string=lambda t: t and "INSTITUTIONAL SESSION DESK NOTE" in t)
     if desk_note_header and desk_note_header.parent:
         parent_divs = desk_note_header.parent.find_all("div")
         content_div = parent_divs[1] if len(parent_divs) > 1 else None
         if content_div:
+            try:
+                from zoneinfo import ZoneInfo
+                now_et = datetime.now(ZoneInfo("America/New_York"))
+                timestamp = now_et.strftime("%b %d, %Y — %H:%M ET")
+            except Exception:
+                timestamp = datetime.utcnow().strftime("%b %d, %Y — %H:%M UTC")
+
             new_html = (
-                f"<b>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> {geo_headline}<br><br>"
+                f"<div style='font-size:9.5px; color:#8a8f88; margin-bottom:6px;'>As of {timestamp}</div>"
+                f"<b>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> {geo_summary}<br><br>"
                 f"<b>INTRADAY BIAS &amp; LIQUIDITY MAP:</b> {liquidity_paragraph}"
             )
             content_div.clear()
@@ -495,7 +554,8 @@ def generate_updated_dashboard():
     with open('index.html', 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f.read(), 'html.parser')
 
-    headlines = fetch_latest_macro_headlines()
+    headlines = fetch_all_headlines()
+    geo_summary = summarize_geopolitical_rate_context(headlines)
 
     # fetch gold/silver once, share between bias cards and the desk note paragraph
     gold_price = fetch_yahoo_chart("GC=F")
@@ -507,7 +567,7 @@ def generate_updated_dashboard():
     update_bias_cards(soup, bias_rows)
 
     liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines)
-    update_desk_note(soup, headlines[0], liquidity_paragraph)
+    update_desk_note(soup, geo_summary, liquidity_paragraph)
 
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(str(soup))
