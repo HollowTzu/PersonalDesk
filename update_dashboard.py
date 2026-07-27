@@ -6,7 +6,7 @@ import urllib.parse
 import json
 from datetime import datetime
 import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MarketDeskBot/1.0'}
 
@@ -550,6 +550,326 @@ def update_desk_note(soup, geo_summary, liquidity_paragraph):
     print("WARNING: desk note not found — left unchanged.")
 
 
+def fetch_fred_series(series_id, api_key):
+    """Generic FRED series fetcher — latest + prior observation."""
+    if not api_key:
+        return None
+    try:
+        url = (f"https://api.stlouisfed.org/fred/series/observations"
+               f"?series_id={series_id}&api_key={api_key}&file_type=json"
+               f"&sort_order=desc&limit=5")
+        d = fetch_json(url)
+        obs = [o for o in d.get("observations", []) if o.get("value") not in (".", None)]
+        if len(obs) < 2:
+            return None
+        latest, prior = float(obs[0]["value"]), float(obs[1]["value"])
+        return {"value": latest, "delta": latest - prior, "date": obs[0]["date"]}
+    except Exception as e:
+        print(f"FRED fetch failed for {series_id}: {e}")
+        return None
+
+
+def fetch_fred_credit_spread():
+    """ICE BofA US High Yield Index Option-Adjusted Spread (BAMLH0A0HYM2) —
+    the real, standard credit-spread series, via FRED's official free API."""
+    api_key = os.environ.get("FRED_API_KEY")
+    if not api_key:
+        print("FRED_API_KEY not set — Credit Spreads will show as 'Not Live'.")
+        return None
+    return fetch_fred_series("BAMLH0A0HYM2", api_key)
+
+
+def classify_real_yield_regime(real_yield, breakeven):
+    """Deterministic classification into one of the three textbook scenarios
+    — the AI only writes the narrative, this decides which scenario applies."""
+    if real_yield is None or breakeven is None:
+        return None
+    ry_delta, be_delta = real_yield['delta'], breakeven['delta']
+    if ry_delta > 0.01 and abs(be_delta) < 0.02:
+        return "tightening"       # nominal up, breakevens flat -> real yield rising -> bearish gold
+    if ry_delta <= 0 and be_delta > 0.02:
+        return "inflation_fear"   # breakevens outrunning -> neutral/bullish, debasement-hedge signal
+    if ry_delta < -0.01 and abs(be_delta) < 0.02:
+        return "growth_scare"     # real yield falling on growth fears -> bullish
+    return "mixed"
+
+
+def generate_real_yield_narrative(real_yield, breakeven, scenario, headlines):
+    if real_yield is None or breakeven is None:
+        return "Live real yield / breakeven data unavailable this run (check FRED_API_KEY)."
+
+    scenario_context = {
+        "tightening": "Nominal yields rising while breakevens are flat — real yields are rising because policy is tightening. Textbook bearish-gold mechanics.",
+        "inflation_fear": "Breakevens rising faster than nominal yields — inflation fear is outrunning the rate move, so real yields may still be falling. Often neutral-to-bullish, sometimes a genuine debasement-hedge signal.",
+        "growth_scare": "Nominal yields falling while breakevens stay flat — real yields falling on growth-scare fears. Bullish: cheaper to hold, plus a safe-haven bid.",
+        "mixed": "No single scenario cleanly applies — real yield and breakeven moves are mixed or small.",
+    }.get(scenario, "")
+
+    system_prompt = (
+        "You write a 2-3 sentence institutional note on what real yields and inflation "
+        "breakevens are currently signaling for gold. Use ONLY the DATA and SCENARIO CONTEXT "
+        "given — never invent a number not listed. State which of the three textbook scenarios "
+        "currently applies and what it implies for gold. Confident, terse, sell-side tone."
+    )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:3]) or "none available"
+    user_prompt = (
+        f"10Y real yield (TIPS): {real_yield['value']:.2f}%, changed {real_yield['delta']:+.2f} vs prior reading ({real_yield['date']})\n"
+        f"10Y inflation breakeven: {breakeven['value']:.2f}%, changed {breakeven['delta']:+.2f} vs prior reading\n"
+        f"SCENARIO CONTEXT: {scenario_context}\n"
+        f"Headlines: {headline_sample}"
+    )
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=150)
+    if raw:
+        return raw.strip()
+    return f"Real yield {real_yield['value']:.2f}% ({real_yield['delta']:+.2f}), breakeven {breakeven['value']:.2f}% ({breakeven['delta']:+.2f}). {scenario_context}"
+
+
+def classify_etf_cot_confluence(cot_data, cvd_data):
+    """Deterministic 2x2 classification (see the guide page) — AI only
+    writes the sentence, this decides which quadrant applies."""
+    if cot_data is None or cvd_data is None:
+        return None
+    cot_rising = cot_data['delta'] > 0
+    etf_rising = cvd_data['cvd_value'] > 0
+    if cot_rising and etf_rising: return "confluence_bull"
+    if cot_rising and not etf_rising: return "fragile_rally"
+    if not cot_rising and etf_rising: return "quiet_accumulation"
+    return "broad_distribution"
+
+
+def generate_etf_confluence_narrative(metal, cot_data, cvd_data, quadrant, headlines):
+    if cot_data is None or cvd_data is None or quadrant is None:
+        return f"{metal} COT/ETF-flow confluence unavailable this run — one or both inputs missing."
+
+    quadrant_context = {
+        "confluence_bull": "COT and ETF flow both rising — strongest confluence, broad-based demand.",
+        "fragile_rally": "COT rising but ETF flow not — speculative-only rally, fragile, no allocator backing.",
+        "quiet_accumulation": "COT falling but ETF flow rising — patient money buying while speculators de-risk, a stealth-strength signal.",
+        "broad_distribution": "Both COT and ETF flow falling — broad distribution, weakest environment.",
+    }.get(quadrant, "")
+
+    system_prompt = (
+        "You write a 1-2 sentence institutional note on COT vs ETF-flow positioning "
+        "confluence for one metal. Use ONLY the DATA and CONTEXT given. Confident, terse tone."
+    )
+    user_prompt = (
+        f"Metal: {metal}\n"
+        f"COT Managed Money w/w change: {cot_data['delta']:+,} contracts\n"
+        f"ETF price/volume-flow proxy: {cvd_data['cvd_trend']}\n"
+        f"CONTEXT: {quadrant_context}"
+    )
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=100)
+    if raw:
+        return raw.strip()
+    return f"{metal}: {quadrant_context}"
+
+
+def get_prior_state(soup, key):
+    """Generic version of the risk-gauge persistence pattern — reads a named
+    state comment so any section can do its own materiality check."""
+    comment = soup.find(string=lambda t: isinstance(t, Comment) and f"{key}:" in t)
+    if not comment:
+        return None
+    try:
+        return json.loads(comment.split(f"{key}:")[1].strip())
+    except Exception:
+        return None
+
+
+def set_state_comment(soup, key, value, anchor_element):
+    new_comment = Comment(f" {key}:{json.dumps(value)} ")
+    old_comment = soup.find(string=lambda t: isinstance(t, Comment) and f"{key}:" in t)
+    if old_comment:
+        old_comment.replace_with(new_comment)
+    elif anchor_element:
+        anchor_element.insert_before(new_comment)
+
+
+def update_real_yield_section(soup, real_yield, breakeven, scenario, headlines):
+    content_el = soup.find(id="real-yield-content")
+    if not content_el:
+        print("WARNING: real-yield-content element not found — left unchanged.")
+        return
+    prior = get_prior_state(soup, "real_yield_state")
+    current = {"scenario": scenario}
+    if prior != current or prior is None:
+        print(f"Real yield regime changed ({prior} -> {current}) — regenerating via AI.")
+        narrative = generate_real_yield_narrative(real_yield, breakeven, scenario, headlines)
+        content_el.string = narrative
+        set_state_comment(soup, "real_yield_state", current, content_el.parent)
+    else:
+        print("Real yield regime unchanged — keeping existing narrative.")
+
+
+def update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
+                                    silver_cot, silver_cvd, silver_quadrant, headlines):
+    content_el = soup.find(id="etf-confluence-content")
+    if not content_el:
+        print("WARNING: etf-confluence-content element not found — left unchanged.")
+        return
+    prior = get_prior_state(soup, "etf_confluence_state")
+    current = {"gold": gold_quadrant, "silver": silver_quadrant}
+    if prior != current or prior is None:
+        print(f"ETF/COT confluence changed ({prior} -> {current}) — regenerating via AI.")
+        gold_note = generate_etf_confluence_narrative("Gold", gold_cot, gold_cvd, gold_quadrant, headlines)
+        silver_note = generate_etf_confluence_narrative("Silver", silver_cot, silver_cvd, silver_quadrant, headlines)
+        content_el.clear()
+        b_tag = soup.new_tag("b")
+        b_tag.string = "Positioning Confluence (COT vs. ETF Flow):"
+        content_el.append(b_tag)
+        content_el.append(f" {gold_note} {silver_note}")
+        set_state_comment(soup, "etf_confluence_state", current, content_el.parent)
+    else:
+        print("ETF/COT confluence unchanged — keeping existing narrative.")
+
+
+def compute_risk_regime(vix_data, dxy_data, gold_data, credit_spread):
+    """Transparent composite score — same principle as the bias badges:
+    named thresholds, not a black box. 0 = max risk-off, 100 = max risk-on."""
+    score = 50  # neutral baseline
+
+    vix = vix_data['price'] if vix_data else None
+    if vix is not None:
+        if vix < 15: score += 20
+        elif vix < 20: score += 5
+        elif vix < 25: score -= 10
+        else: score -= 25
+
+    if credit_spread is not None:
+        if credit_spread['delta'] < -0.02: score += 10   # narrowing = risk-on
+        elif credit_spread['delta'] > 0.02: score -= 15   # widening = risk-off signal, weighted heavier
+
+    safehaven_label = "Mixed"
+    if dxy_data and gold_data:
+        g_up = gold_data['pct_change'] > 0.2
+        g_down = gold_data['pct_change'] < -0.2
+        d_up = dxy_data['pct_change'] > 0.2
+        d_down = dxy_data['pct_change'] < -0.2
+        if g_up and d_down:
+            safehaven_label = "Flight-to-Safety"; score -= 10
+        elif g_down and d_up:
+            safehaven_label = "Dollar-Preferred"; score += 10
+        elif g_up and d_up:
+            safehaven_label = "Mixed (Both Bid)"
+        elif g_down and d_down:
+            safehaven_label = "Mixed (Both Offered)"
+
+    score = max(0, min(100, score))
+    if score >= 70: status = "RISK-ON"
+    elif score >= 55: status = "MODERATE RISK-ON"
+    elif score >= 45: status = "NEUTRAL"
+    elif score >= 30: status = "MODERATE RISK-OFF"
+    else: status = "RISK-OFF"
+
+    vix_display = f"~{vix:.1f}" if vix is not None else "N/A"
+    if credit_spread is not None:
+        credit_display = f"{credit_spread['value']:.2f}% ({'widening' if credit_spread['delta']>0 else 'narrowing' if credit_spread['delta']<0 else 'flat'})"
+    else:
+        credit_display = "Not Live (set FRED_API_KEY)"
+
+    return {
+        "status": status,
+        "fill_pct": score,
+        "vix_display": vix_display,
+        "credit_display": credit_display,
+        "safehaven_display": safehaven_label,
+        "vix_raw": vix,
+    }
+
+
+def get_prior_risk_state(soup):
+    """Reads the last run's status + VIX (embedded as an HTML comment) so we
+    can decide whether today's move is material enough to regenerate the AI
+    catalyst text, or whether to leave it alone — the 'weekly view, updates
+    within the week if something happens' behavior."""
+    comment = soup.find(string=lambda t: isinstance(t, Comment) and "risk_state:" in t)
+    if not comment:
+        return None
+    try:
+        payload = comment.split("risk_state:")[1].strip()
+        return json.loads(payload)
+    except Exception:
+        return None
+
+
+def is_material_change(prior, current):
+    if prior is None:
+        return True  # no prior state recorded — always generate the first time
+    if prior.get("status") != current["status"]:
+        return True
+    prior_vix = prior.get("vix_raw")
+    if prior_vix is not None and current["vix_raw"] is not None:
+        if abs(current["vix_raw"] - prior_vix) >= 2.0:
+            return True
+    return False
+
+
+def generate_catalyst_and_focus(headlines, risk_regime, gold_cot, silver_cot):
+    """AI-generated only when is_material_change() says something actually
+    shifted — otherwise the caller skips this entirely and keeps prior text."""
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
+    system_prompt = (
+        "You write two short institutional dashboard fields based ONLY on the DATA given:\n"
+        "1. 'catalyst': the single most market-moving theme right now (under 12 words)\n"
+        "2. 'affects': 2-4 asset classes it impacts, comma-separated, from this list only: "
+        "Equities, Precious Metals, Energy, FX, Rates, Crypto\n"
+        "3. 'focus': the dominant macro tension this quarter, framed as 'X vs Y' (under 8 words)\n"
+        "Do not invent specific events not implied by the headlines. Output ONLY valid JSON: "
+        '{"catalyst": "...", "affects": "...", "focus": "..."}'
+    )
+    user_prompt = (
+        f"Headlines: {headline_sample}\n"
+        f"Risk regime: {risk_regime['status']}, VIX {risk_regime['vix_display']}, "
+        f"Safe-haven flow: {risk_regime['safehaven_display']}"
+    )
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=120)
+    if raw:
+        try:
+            cleaned = raw.strip().strip("`")
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:].strip()
+            parsed = json.loads(cleaned)
+            if all(k in parsed for k in ("catalyst", "affects", "focus")):
+                return parsed
+        except Exception as e:
+            print(f"Could not parse catalyst/focus AI response: {e}")
+    return {
+        "catalyst": "AI generation unavailable this run",
+        "affects": "Equities, Precious Metals",
+        "focus": "Sticky Inflation vs Deficits",
+    }
+
+
+def update_risk_gauge(soup, risk_regime, catalyst_data):
+    box = soup.find("div", class_="risk-gauge-box")
+    if box:
+        status_el = box.find("div", class_="risk-status")
+        if status_el: status_el.string = risk_regime["status"]
+        fill_el = box.find("div", class_="risk-fill")
+        if fill_el: fill_el["style"] = f"width:{risk_regime['fill_pct']}%"
+        meta_el = box.find_all("div")[-1]
+        if meta_el:
+            meta_el.string = (f"VIX: {risk_regime['vix_display']} · "
+                               f"Credit Spreads: {risk_regime['credit_display']} · "
+                               f"Safe-Haven Flow: {risk_regime['safehaven_display']}")
+    event_box = soup.find("div", class_="next-event-box")
+    if event_box:
+        title_el = event_box.find("div", style=lambda s: s and "font-weight:600" in s)
+        if title_el: title_el.string = catalyst_data["catalyst"]
+        affects_el = event_box.find("div", string=lambda t: t and "Affects:" in t)
+        if affects_el: affects_el.string = f"Affects: {catalyst_data['affects']}"
+        driver_el = event_box.find("div", string=lambda t: t and "Primary Driver:" in t)
+        if driver_el: driver_el.string = f"Primary Driver: {catalyst_data['focus']}"
+    # embed the state for next run's materiality check
+    new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw']})} ")
+    old_comment = soup.find(string=lambda t: isinstance(t, Comment) and "risk_state:" in t)
+    if old_comment:
+        old_comment.replace_with(new_comment)
+    elif box:
+        box.insert_before(new_comment)
+    print(f"Risk gauge updated: {risk_regime['status']} (fill {risk_regime['fill_pct']}%).")
+
+
 def generate_updated_dashboard():
     with open('index.html', 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f.read(), 'html.parser')
@@ -568,6 +888,54 @@ def generate_updated_dashboard():
 
     liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines)
     update_desk_note(soup, geo_summary, liquidity_paragraph)
+
+    # --- Risk Gauge: numbers computed every run, AI text only on material change ---
+    vix_data = fetch_yahoo_chart("^VIX")
+    dxy_data = fetch_yahoo_chart("DX-Y.NYB")
+    credit_spread = fetch_fred_credit_spread()
+    risk_regime = compute_risk_regime(vix_data, dxy_data, gold_price, credit_spread)
+
+    prior_state = get_prior_risk_state(soup)
+    if is_material_change(prior_state, risk_regime):
+        print(f"Risk regime materially changed (prior: {prior_state}) — regenerating catalyst/focus via AI.")
+        catalyst_data = generate_catalyst_and_focus(headlines, risk_regime, gold_cot, silver_cot)
+        update_risk_gauge(soup, risk_regime, catalyst_data)
+    else:
+        print("No material change in risk regime — updating live numbers only, keeping existing catalyst/focus text.")
+        box = soup.find("div", class_="risk-gauge-box")
+        if box:
+            status_el = box.find("div", class_="risk-status")
+            if status_el: status_el.string = risk_regime["status"]
+            fill_el = box.find("div", class_="risk-fill")
+            if fill_el: fill_el["style"] = f"width:{risk_regime['fill_pct']}%"
+            meta_el = box.find_all("div")[-1]
+            if meta_el:
+                meta_el.string = (f"VIX: {risk_regime['vix_display']} · "
+                                   f"Credit Spreads: {risk_regime['credit_display']} · "
+                                   f"Safe-Haven Flow: {risk_regime['safehaven_display']}")
+        new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw']})} ")
+        old_comment = soup.find(string=lambda t: isinstance(t, Comment) and "risk_state:" in t)
+        if old_comment:
+            old_comment.replace_with(new_comment)
+        elif box:
+            box.insert_before(new_comment)
+
+    # --- Real Yields & Rate Transmission (monthly narrative, materiality-gated) ---
+    fred_key = os.environ.get("FRED_API_KEY")
+    real_yield = fetch_fred_series("DFII10", fred_key)
+    breakeven = fetch_fred_series("T10YIE", fred_key)
+    ry_scenario = classify_real_yield_regime(real_yield, breakeven)
+    update_real_yield_section(soup, real_yield, breakeven, ry_scenario, headlines)
+
+    # --- ETF-flow vs COT confluence (folded into Supply & Demand, materiality-gated) ---
+    gld_data = fetch_yahoo_chart("GLD")
+    slv_data = fetch_yahoo_chart("SLV")
+    gold_cvd = compute_volume_delta_zone(gld_data) if gld_data else None
+    silver_cvd = compute_volume_delta_zone(slv_data) if slv_data else None
+    gold_quadrant = classify_etf_cot_confluence(gold_cot, gold_cvd)
+    silver_quadrant = classify_etf_cot_confluence(silver_cot, silver_cvd)
+    update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
+                                    silver_cot, silver_cvd, silver_quadrant, headlines)
 
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(str(soup))
