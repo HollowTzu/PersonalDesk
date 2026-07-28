@@ -226,6 +226,8 @@ RSS_SOURCES = [
     ("Yahoo Finance", "https://finance.yahoo.com/news/rssindex"),
     ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/topstories/"),
     ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+    ("FXStreet", "https://www.fxstreet.com/rss"),
+    ("ForexLive (InvestingLive)", "https://investinglive.com/rss/"),
 ]
 
 
@@ -465,16 +467,97 @@ def update_bias_cards(soup, bias_rows):
     print(f"Updated {updated_count} of {len(cards)} bias cards with live data.")
 
 
-def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines):
-    """AI-written intraday bias / swing projection paragraph for the desk note.
-    Hard constraint in the prompt: only reference the specific price levels
-    given below (real recent highs/lows, plus the volume-delta proxy zone —
-    never invent a level that isn't in DATA. 'Liquidity pool' framing = real
-    recent range extremes, standard textbook definition (resting stops
-    cluster around prior highs/lows), not a claim of actual order-book data."""
+def determine_session():
+    """Which session this run belongs to, based on real UTC time. Cron is
+    fixed-UTC (doesn't auto-adjust for US DST) — worth re-checking the
+    cron values in daily_update.yml twice a year around DST changes."""
+    hour_utc = datetime.utcnow().hour
+    if 23 <= hour_utc or hour_utc < 7:
+        return "ASIA"
+    elif 7 <= hour_utc < 12:
+        return "LONDON"
+    else:
+        return "NEW YORK"
+
+
+def fetch_intraday_extremes(symbol):
+    """Today's actual high/low so far, from real intraday bars — used to
+    objectively check whether a projected level has really been touched."""
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=15m&range=1d"
+        d = fetch_json(url)
+        result = d['chart']['result'][0]
+        quote = result['indicators']['quote'][0]
+        highs = [h for h in quote.get('high', []) if h is not None]
+        lows = [l for l in quote.get('low', []) if l is not None]
+        if not highs or not lows:
+            return None
+        return {"high": max(highs), "low": min(lows)}
+    except Exception as e:
+        print(f"Intraday extremes fetch failed for {symbol}: {e}")
+        return None
+
+
+def get_or_set_daily_levels(soup, metal_key, price_data, cvd_data, session):
+    """At the first run of the day (Asia), project and save today's key
+    levels. At later runs (London/NY), read those same saved levels back
+    so the note can honestly say what's been touched vs. still resting —
+    this is a real persistence + comparison, not the AI recalling anything."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    state_key = f"daily_levels_{metal_key}"
+    prior = get_prior_state(soup, state_key)
+
+    if prior is None or prior.get("date") != today or session == "ASIA":
+        levels = {
+            "date": today,
+            "resistance": price_data['recent_high'],
+            "support": price_data['recent_low'],
+            "volume_zone": cvd_data['heaviest_volume_price'] if cvd_data else None,
+        }
+        anchor = soup.find(id="monetary-fiscal-section") or soup.body
+        set_state_comment(soup, state_key, levels, anchor)
+        print(f"{metal_key}: new daily levels projected for {today} at {session} session.")
+        return levels
+    return prior
+
+
+def check_levels_touched(levels, intraday_extremes):
+    """Objective, computed — not AI judgment."""
+    if not levels or not intraday_extremes:
+        return {"resistance_touched": None, "support_touched": None}
+    return {
+        "resistance_touched": intraday_extremes["high"] >= levels["resistance"],
+        "support_touched": intraday_extremes["low"] <= levels["support"],
+    }
+
+
+def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines, session, soup):
+    """AI-written session note. Structure (in order): the fact that happened,
+    a level's role-change (support<->resistance), volume/accumulation
+    confirmation, an honest SMT divergence flag, risk-regime context, and a
+    specific invalidation condition. Every price level and touched/untouched
+    status is computed in Python from real data and handed to the AI —
+    never invented."""
     if not (gold_price and silver_price):
         return ("Live price data unavailable this run — intraday liquidity map "
                 "could not be generated. Check next scheduled update.")
+
+    gold_cvd = compute_volume_delta_zone(gold_price)
+    silver_cvd = compute_volume_delta_zone(silver_price)
+
+    gold_levels = get_or_set_daily_levels(soup, "gold", gold_price, gold_cvd, session)
+    silver_levels = get_or_set_daily_levels(soup, "silver", silver_price, silver_cvd, session)
+
+    gold_intraday = fetch_intraday_extremes("GC=F")
+    silver_intraday = fetch_intraday_extremes("SI=F")
+    gold_touched = check_levels_touched(gold_levels, gold_intraday)
+    silver_touched = check_levels_touched(silver_levels, silver_intraday)
+
+    def fmt_touch(label, level, touched):
+        if level is None:
+            return f"{label}: not available"
+        status = "TOUCHED" if touched else "still untouched" if touched is False else "status unknown"
+        return f"{label} {level:.2f} — {status}"
 
     g_delta = gold_cot['delta'] if gold_cot else None
     s_delta = silver_cot['delta'] if silver_cot else None
@@ -486,46 +569,50 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
         smt_line = (f"Gold's Managed Money net position {g_dir} week-over-week; silver's {s_dir}. "
                     f"Positioning {'confirms' if agree else 'is diverging'} across the two metals.")
 
-    gold_cvd = compute_volume_delta_zone(gold_price)
-    silver_cvd = compute_volume_delta_zone(silver_price)
-    cvd_line = ""
-    if gold_cvd:
-        cvd_line += f"Gold volume-delta proxy: {gold_cvd['cvd_trend']}, heaviest-volume price zone ~{gold_cvd['heaviest_volume_price']:.2f}. "
-    if silver_cvd:
-        cvd_line += f"Silver volume-delta proxy: {silver_cvd['cvd_trend']}, heaviest-volume price zone ~{silver_cvd['heaviest_volume_price']:.2f}."
-
     system_prompt = (
-        "You write a 2-3 sentence intraday bias / swing projection note for a personal "
-        "trading dashboard, in the style of a terse institutional session note. "
-        "HARD RULE: the only specific price levels you may mention are the ones given "
-        "in DATA below — never state a price level that isn't listed there. Frame the "
-        "recent high/low as resting liquidity (where stops typically cluster), and the "
-        "'heaviest-volume price zone' as where accumulation/distribution has concentrated "
-        "recently — this is standard market-structure framing from real daily volume data, "
-        "not a claim of tick-level order-book data. If positioning divergence is noted in "
-        "DATA, reference it briefly, in plain English (not jargon like 'w/w'). No hedge "
-        "words, no disclaimers, no markdown — plain sentences only."
+        "You write a session trading note (Asia/London/New York open) for a personal "
+        "trading dashboard. Follow this exact structure, in order:\n"
+        "1. Lead with the single most important FACT from DATA (a level touched, or "
+        "still holding) — no throat-clearing.\n"
+        "2. If a level was touched, state its role change (resistance that's now support, "
+        "or vice versa). If untouched, say what that implies about where price is coiling.\n"
+        "3. Reference the volume/accumulation zone from DATA — confirm or question whether "
+        "it's actually holding.\n"
+        "4. State the SMT (gold vs silver positioning) read honestly — if it's diverging, "
+        "say so plainly, don't force false confluence.\n"
+        "5. One sentence of risk-regime context — supporting, not leading.\n"
+        "6. End with ONE specific invalidation condition — a level AND a real condition "
+        "(e.g. 'a close back below X, not just a wick').\n"
+        "HARD RULE: only reference price levels and touched/untouched status exactly as "
+        "given in DATA — never invent one. Confident, terse, sell-side tone. No hedge "
+        "words, no disclaimers, no markdown. 4-6 sentences total."
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
     user_prompt = (
-        f"GOLD: price {gold_price['price']:.2f}, recent range {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}\n"
-        f"SILVER: price {silver_price['price']:.2f}, recent range {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}\n"
-        f"{cvd_line}\n"
+        f"SESSION: {session}\n"
+        f"GOLD: price {gold_price['price']:.2f}\n"
+        f"  {fmt_touch('Resistance', gold_levels.get('resistance'), gold_touched['resistance_touched'])}\n"
+        f"  {fmt_touch('Support', gold_levels.get('support'), gold_touched['support_touched'])}\n"
+        f"  Volume-accumulation zone: {gold_levels.get('volume_zone')}\n"
+        f"SILVER: price {silver_price['price']:.2f}\n"
+        f"  {fmt_touch('Resistance', silver_levels.get('resistance'), silver_touched['resistance_touched'])}\n"
+        f"  {fmt_touch('Support', silver_levels.get('support'), silver_touched['support_touched'])}\n"
+        f"  Volume-accumulation zone: {silver_levels.get('volume_zone')}\n"
         f"{smt_line}\n"
         f"Today's headlines: {headline_sample}"
     )
 
-    raw = call_ai_model(system_prompt, user_prompt, max_tokens=180)
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=280)
     if raw:
         return raw.strip()
 
     # fallback — still real numbers, just unstyled
-    return (f"Gold liquidity resting between {gold_price['recent_low']:.2f}-{gold_price['recent_high']:.2f}; "
-            f"silver between {silver_price['recent_low']:.2f}-{silver_price['recent_high']:.2f}. "
-            f"{cvd_line} {smt_line}")
+    return (f"[{session}] Gold: resistance {gold_levels.get('resistance')}, support {gold_levels.get('support')}, "
+            f"volume zone {gold_levels.get('volume_zone')}. Silver: resistance {silver_levels.get('resistance')}, "
+            f"support {silver_levels.get('support')}. {smt_line}")
 
 
-def update_desk_note(soup, geo_summary, liquidity_paragraph):
+def update_desk_note(soup, geo_summary, liquidity_paragraph, session):
     desk_note_header = soup.find("div", string=lambda t: t and "INSTITUTIONAL SESSION DESK NOTE" in t)
     if desk_note_header and desk_note_header.parent:
         parent_divs = desk_note_header.parent.find_all("div")
@@ -539,7 +626,7 @@ def update_desk_note(soup, geo_summary, liquidity_paragraph):
                 timestamp = datetime.utcnow().strftime("%b %d, %Y — %H:%M UTC")
 
             new_html = (
-                f"<div style='font-size:9.5px; color:#8a8f88; margin-bottom:6px;'>As of {timestamp}</div>"
+                f"<div style='font-size:9.5px; color:#8a8f88; margin-bottom:6px;'>As of {timestamp} — {session} session</div>"
                 f"<b style='color:#9BE7ED;'>GEOPOLITICAL &amp; RATE TRANSMISSION:</b> {geo_summary}<br><br>"
                 f"<b style='color:#9BE7ED;'>INTRADAY BIAS &amp; LIQUIDITY MAP:</b> {liquidity_paragraph}"
             )
@@ -723,6 +810,153 @@ def update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
         print("ETF/COT confluence unchanged — keeping existing narrative.")
 
 
+def should_refresh_monthly(prior_state, current_trigger_flags):
+    """Monthly narrative cadence, but responsive within the month: refresh if
+    28+ days have passed since the last generation, OR if any of the passed
+    trigger flags (e.g. risk regime, real yield scenario) changed."""
+    if prior_state is None:
+        return True
+    try:
+        last_gen = datetime.fromisoformat(prior_state.get("generated_at", ""))
+        days_elapsed = (datetime.utcnow() - last_gen).days
+    except Exception:
+        days_elapsed = 999
+    if days_elapsed >= 28:
+        return True
+    prior_flags = prior_state.get("flags", {})
+    return prior_flags != current_trigger_flags
+
+
+def generate_monetary_fiscal_narrative(fiscal_debt_trillion, real_yield, headlines):
+    system_prompt = (
+        "You write the 'Monetary & Fiscal Policy' section of a Q3 2026 institutional "
+        "fundamental analysis panel, for gold and USD. Two short paragraphs: one framed "
+        "'▲ USD' (near-term policy/rate factors), one '▼ USD' (structural fiscal factors). "
+        "Use ONLY the DATA given — never invent a number not listed. Confident, terse, "
+        "sell-side tone. Output plain HTML using only <b> and <br><br> for structure, "
+        "matching this exact format: '<b>▲ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
+    )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
+    ry_line = f"10Y real yield: {real_yield['value']:.2f}% ({real_yield['delta']:+.2f})" if real_yield else "Real yield data unavailable"
+    user_prompt = (
+        f"US total public debt: ${fiscal_debt_trillion:.2f} trillion\n"
+        f"{ry_line}\n"
+        f"Headlines: {headline_sample}"
+    )
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=220)
+    return raw.strip() if raw else None
+
+
+def generate_geopolitical_narrative(headlines, risk_regime):
+    system_prompt = (
+        "You write the 'Geopolitical Risk & Sentiment' section of a Q3 2026 institutional "
+        "fundamental analysis panel. Two short items: one '▲ USD', one '▼ USD', reflecting "
+        "genuine tension in current conditions. Use ONLY the DATA given. Confident, terse tone. "
+        "Output plain HTML: '<b>▲ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
+    )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:6]) or "none available"
+    user_prompt = f"Risk regime: {risk_regime['status']}, Safe-Haven Flow: {risk_regime['safehaven_display']}\nHeadlines: {headline_sample}"
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=200)
+    return raw.strip() if raw else None
+
+
+def generate_supply_demand_narrative(gold_cot, silver_cot, headlines):
+    system_prompt = (
+        "You write the 'Supply & Demand (Gold & Silver)' section of a Q3 2026 institutional "
+        "fundamental analysis panel. Two short items, both framed '▼ USD' (structural demand "
+        "factors), covering central bank reserve buying and physical market supply/demand. "
+        "Use ONLY the DATA given — never invent a specific tonnage or deficit figure not listed. "
+        "Output plain HTML: '<b>▼ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
+    )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
+    cot_line = ""
+    if gold_cot: cot_line += f"Gold COT net: {gold_cot['net']:+,} ({gold_cot['delta']:+,} w/w). "
+    if silver_cot: cot_line += f"Silver COT net: {silver_cot['net']:+,} ({silver_cot['delta']:+,} w/w)."
+    user_prompt = f"{cot_line}\nHeadlines: {headline_sample}"
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=200)
+    return raw.strip() if raw else None
+
+
+def generate_striking_note_narrative(headlines):
+    system_prompt = (
+        "You write a short institutional note (3-4 sentences) titled 'THE TARGET REVISION "
+        "DECEPTION' — the point is to warn readers not to mistake sell-side banks trimming "
+        "their price targets (on near-term rate repricing) for a reversal of the longer-run "
+        "structural case. HARD RULE: do not state any specific new dollar price target or "
+        "figure — this note is about how to interpret target revisions in general, not new "
+        "numbers. Ground the framing in the real headlines given. Confident, terse tone, plain text."
+    )
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
+    user_prompt = f"Headlines: {headline_sample}"
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=180)
+    return raw.strip() if raw else None
+
+
+def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_regime,
+                                    gold_cot, silver_cot, headlines):
+    """Materiality/monthly-gated update for the three original Fundamental Analysis
+    subsections plus the Striking Institutional Note — all AI-generated (Gemini),
+    grounded only in real fetched data, never inventing named-bank price figures."""
+    trigger_flags = {
+        "risk_status": risk_regime["status"] if risk_regime else None,
+        "real_yield_delta_sign": (1 if real_yield and real_yield["delta"] > 0 else -1 if real_yield else 0),
+    }
+    prior = get_prior_state(soup, "fundamental_narrative_state")
+    if not should_refresh_monthly(prior, trigger_flags):
+        print("Fundamental Analysis narratives unchanged this run (within monthly window, no material trigger).")
+        return
+
+    print("Refreshing Fundamental Analysis narratives (monthly window elapsed or material trigger fired).")
+
+    mf = generate_monetary_fiscal_narrative(fiscal_debt_trillion, real_yield, headlines)
+    if mf:
+        el = soup.find(id="monetary-fiscal-content")
+        if el:
+            el.clear()
+            el.append(BeautifulSoup(mf, 'html.parser'))
+
+    geo = generate_geopolitical_narrative(headlines, risk_regime)
+    if geo:
+        el = soup.find(id="geopolitical-content")
+        if el:
+            el.clear()
+            el.append(BeautifulSoup(geo, 'html.parser'))
+
+    sd = generate_supply_demand_narrative(gold_cot, silver_cot, headlines)
+    if sd:
+        el = soup.find(id="supply-demand-content")
+        if el:
+            el.clear()
+            el.append(BeautifulSoup(sd, 'html.parser'))
+
+    note = generate_striking_note_narrative(headlines)
+    if note:
+        el = soup.find(id="striking-note-content")
+        if el:
+            el.string = note
+
+    anchor = soup.find(id="monetary-fiscal-section")
+    set_state_comment(soup, "fundamental_narrative_state",
+                       {"flags": trigger_flags, "generated_at": datetime.utcnow().isoformat()},
+                       anchor)
+
+
+def fetch_treasury_debt_trillion():
+    """Same public, no-key Treasury API already used client-side — Python
+    equivalent so the monetary/fiscal narrative can ground on the real figure."""
+    try:
+        url = ("https://api.fiscaldata.treasury.gov/services/api/fiscal_service/"
+               "v2/accounting/od/debt_to_penny?sort=-record_date&limit=1")
+        d = fetch_json(url)
+        row = d.get("data", [None])[0]
+        if not row:
+            return None
+        return float(row["tot_pub_debt_out_amt"]) / 1e12
+    except Exception as e:
+        print(f"Treasury debt fetch failed: {e}")
+        return None
+
+
 def compute_risk_regime(vix_data, dxy_data, gold_data, credit_spread):
     """Transparent composite score — same principle as the bias badges:
     named thresholds, not a black box. 0 = max risk-off, 100 = max risk-on."""
@@ -874,6 +1108,9 @@ def generate_updated_dashboard():
     with open('index.html', 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f.read(), 'html.parser')
 
+    session = determine_session()
+    print(f"Running as: {session} session.")
+
     headlines = fetch_all_headlines()
     geo_summary = summarize_geopolitical_rate_context(headlines)
 
@@ -886,8 +1123,8 @@ def generate_updated_dashboard():
     bias_rows = compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot)
     update_bias_cards(soup, bias_rows)
 
-    liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines)
-    update_desk_note(soup, geo_summary, liquidity_paragraph)
+    liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines, session, soup)
+    update_desk_note(soup, geo_summary, liquidity_paragraph, session)
 
     # --- Risk Gauge: numbers computed every run, AI text only on material change ---
     vix_data = fetch_yahoo_chart("^VIX")
@@ -936,6 +1173,12 @@ def generate_updated_dashboard():
     silver_quadrant = classify_etf_cot_confluence(silver_cot, silver_cvd)
     update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
                                     silver_cot, silver_cvd, silver_quadrant, headlines)
+
+    # --- Fundamental Analysis (Monetary/Fiscal, Geopolitical, Supply&Demand) + Striking Note ---
+    # Monthly narrative, but responsive within the month if risk regime or real yield scenario shifts
+    fiscal_debt = fetch_treasury_debt_trillion()
+    update_fundamental_narratives(soup, fiscal_debt, real_yield, risk_regime,
+                                    gold_cot, silver_cot, headlines)
 
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(str(soup))
