@@ -2,8 +2,15 @@ name: Daily Market Desk Update
 
 on:
   schedule:
-    # Runs automatically every weekday at 6:00 AM ET (10:00 UTC)
-    - cron: '0 10 * * 1-5'
+    # Session-aligned runs, weekdays only. Times in UTC — fixed, does NOT
+    # auto-adjust for US daylight saving. Current values assume EDT (UTC-4,
+    # in effect Mar-Nov). Re-check these +/-1hr when US clocks change:
+    #   Asia open   ~7:00 PM ET  -> 23:00 UTC
+    #   London open ~3:00 AM ET  ->  7:00 UTC
+    #   NY open     ~8:00 AM ET  -> 12:00 UTC
+    - cron: '0 23 * * 1-5'   # Asia session
+    - cron: '0 7 * * 1-5'    # London session
+    - cron: '0 12 * * 1-5'   # New York session
   workflow_dispatch: # Allows manual trigger from GitHub UI anytime
 
 permissions:
