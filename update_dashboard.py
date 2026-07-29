@@ -924,6 +924,7 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
     else:
         print("WARNING: Monetary & Fiscal narrative failed this run — left unchanged (stale).")
         all_succeeded = False
+    time.sleep(3)
 
     geo = generate_geopolitical_narrative(headlines, risk_regime)
     if geo:
@@ -934,6 +935,7 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
     else:
         print("WARNING: Geopolitical narrative failed this run — left unchanged (stale).")
         all_succeeded = False
+    time.sleep(3)
 
     sd = generate_supply_demand_narrative(gold_cot, silver_cot, headlines)
     if sd:
@@ -944,6 +946,7 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
     else:
         print("WARNING: Supply & Demand narrative failed this run — left unchanged (stale).")
         all_succeeded = False
+    time.sleep(3)
 
     note = generate_striking_note_narrative(headlines)
     if note:
@@ -1149,6 +1152,7 @@ def generate_updated_dashboard():
 
     liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines, session, soup)
     update_desk_note(soup, geo_summary, liquidity_paragraph, session)
+    time.sleep(3)  # spread AI call bursts across phases, not just within the bias-card loop
 
     # --- Risk Gauge: numbers computed every run, AI text only on material change ---
     vix_data = fetch_yahoo_chart("^VIX")
@@ -1181,12 +1185,15 @@ def generate_updated_dashboard():
         elif box:
             box.insert_before(new_comment)
 
+    time.sleep(3)
+
     # --- Real Yields & Rate Transmission (monthly narrative, materiality-gated) ---
     fred_key = os.environ.get("FRED_API_KEY")
     real_yield = fetch_fred_series("DFII10", fred_key)
     breakeven = fetch_fred_series("T10YIE", fred_key)
     ry_scenario = classify_real_yield_regime(real_yield, breakeven)
     update_real_yield_section(soup, real_yield, breakeven, ry_scenario, headlines)
+    time.sleep(3)
 
     # --- ETF-flow vs COT confluence (folded into Supply & Demand, materiality-gated) ---
     gld_data = fetch_yahoo_chart("GLD")
@@ -1197,6 +1204,7 @@ def generate_updated_dashboard():
     silver_quadrant = classify_etf_cot_confluence(silver_cot, silver_cvd)
     update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
                                     silver_cot, silver_cvd, silver_quadrant, headlines)
+    time.sleep(3)
 
     # --- Fundamental Analysis (Monetary/Fiscal, Geopolitical, Supply&Demand) + Striking Note ---
     # Monthly narrative, but responsive within the month if risk regime or real yield scenario shifts
