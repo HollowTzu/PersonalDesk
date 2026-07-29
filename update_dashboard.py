@@ -217,6 +217,12 @@ def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
             return call_ai_model(system_prompt, user_prompt, max_tokens, _retry=False)
         print(f"Gemini call failed: HTTP {e.code}: {e.reason}")
         return None
+    except (TimeoutError, urllib.error.URLError) as e:
+        if _retry:
+            print(f"Gemini call timed out — retrying once: {e}")
+            return call_ai_model(system_prompt, user_prompt, max_tokens, _retry=False)
+        print(f"Gemini call failed after retry: {e}")
+        return None
     except Exception as e:
         print(f"Gemini call failed: {e}")
         return None
@@ -227,7 +233,6 @@ RSS_SOURCES = [
     ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/topstories/"),
     ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
     ("FXStreet", "https://www.fxstreet.com/rss"),
-    ("ForexLive (InvestingLive)", "https://investinglive.com/rss/"),
 ]
 
 
@@ -908,12 +913,17 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
 
     print("Refreshing Fundamental Analysis narratives (monthly window elapsed or material trigger fired).")
 
+    all_succeeded = True
+
     mf = generate_monetary_fiscal_narrative(fiscal_debt_trillion, real_yield, headlines)
     if mf:
         el = soup.find(id="monetary-fiscal-content")
         if el:
             el.clear()
             el.append(BeautifulSoup(mf, 'html.parser'))
+    else:
+        print("WARNING: Monetary & Fiscal narrative failed this run — left unchanged (stale).")
+        all_succeeded = False
 
     geo = generate_geopolitical_narrative(headlines, risk_regime)
     if geo:
@@ -921,6 +931,9 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         if el:
             el.clear()
             el.append(BeautifulSoup(geo, 'html.parser'))
+    else:
+        print("WARNING: Geopolitical narrative failed this run — left unchanged (stale).")
+        all_succeeded = False
 
     sd = generate_supply_demand_narrative(gold_cot, silver_cot, headlines)
     if sd:
@@ -928,17 +941,28 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         if el:
             el.clear()
             el.append(BeautifulSoup(sd, 'html.parser'))
+    else:
+        print("WARNING: Supply & Demand narrative failed this run — left unchanged (stale).")
+        all_succeeded = False
 
     note = generate_striking_note_narrative(headlines)
     if note:
         el = soup.find(id="striking-note-content")
         if el:
             el.string = note
+    else:
+        print("WARNING: Striking Note narrative failed this run — left unchanged (stale).")
+        all_succeeded = False
 
-    anchor = soup.find(id="monetary-fiscal-section")
-    set_state_comment(soup, "fundamental_narrative_state",
-                       {"flags": trigger_flags, "generated_at": datetime.utcnow().isoformat()},
-                       anchor)
+    if all_succeeded:
+        anchor = soup.find(id="monetary-fiscal-section")
+        set_state_comment(soup, "fundamental_narrative_state",
+                           {"flags": trigger_flags, "generated_at": datetime.utcnow().isoformat()},
+                           anchor)
+    else:
+        print("Not all Fundamental Analysis sections generated successfully — "
+              "leaving the monthly-refresh timestamp unset so the next run retries "
+              "the whole set, rather than treating this as done for the month.")
 
 
 def fetch_treasury_debt_trillion():
