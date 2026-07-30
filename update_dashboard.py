@@ -26,7 +26,7 @@ def fetch_json(url, timeout=15):
 
 def fetch_cot_managed_money(search_term):
     """Latest + prior week Managed Money net position from CFTC (Disaggregated Futures-Only)."""
-    where = f"upper(market_and_exchange_names) like upper('%{search_term}%')"
+    where = f"upper(market_and_exchange_names) like upper('%{search_term}%') AND upper(market_and_exchange_names) not like upper('%MICRO%')"
     order = "report_date_as_yyyy_mm_dd DESC"
     url = (f"https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
            f"?$where={urllib.parse.quote(where)}&$order={urllib.parse.quote(order)}&$limit=2")
@@ -589,8 +589,14 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
         "6. End with ONE specific invalidation condition — a level AND a real condition "
         "(e.g. 'a close back below X, not just a wick').\n"
         "HARD RULE: only reference price levels and touched/untouched status exactly as "
-        "given in DATA — never invent one. Confident, terse, sell-side tone. No hedge "
-        "words, no disclaimers, no markdown. 4-6 sentences total."
+        "given in DATA — never invent one. Refer to price levels neutrally as 'key level' "
+        "or 'the level' — do NOT call something 'today's high/low' or 'this session's move' "
+        "unless DATA explicitly confirms it was set in the current session; the level may "
+        "be older. Never attribute a level or move to a specific event or catalyst (e.g. "
+        "'the FOMC drove this') unless that exact causal claim is present in DATA — if no "
+        "cause is given, describe the price action itself, not a guessed reason for it. "
+        "Confident, terse, sell-side tone. No hedge words, no disclaimers, no markdown. "
+        "4-6 sentences total."
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
     user_prompt = (
