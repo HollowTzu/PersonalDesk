@@ -1,5 +1,6 @@
 import os
 import time
+import re
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -799,6 +800,23 @@ def update_real_yield_section(soup, real_yield, breakeven, scenario, headlines):
         print("Real yield regime unchanged — keeping existing narrative.")
 
 
+def colorize_usd_symbols(text):
+    """Guarantees ▲ USD / ▼ USD get the right color regardless of what the AI
+    output looks like — post-processed, not trusted to the model to style
+    correctly inline."""
+    text = re.sub(r'▲\s*USD', '<span style="color:#00FF36; font-weight:700;">▲ USD</span>', text)
+    text = re.sub(r'▼\s*USD', '<span style="color:#FA300C; font-weight:700;">▼ USD</span>', text)
+    return text
+
+
+def colorize_metal_words(text):
+    """Wrap standalone 'Gold'/'Silver' mentions in their thematic colors —
+    case-insensitive match, original casing preserved."""
+    text = re.sub(r'\bgold\b', lambda m: f'<span style="color:#FFB020;">{m.group(0)}</span>', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bsilver\b', lambda m: f'<span style="color:#C7CBD1;">{m.group(0)}</span>', text, flags=re.IGNORECASE)
+    return text
+
+
 def update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
                                     silver_cot, silver_cvd, silver_quadrant, headlines):
     content_el = soup.find(id="etf-confluence-content")
@@ -812,10 +830,13 @@ def update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
         gold_note = generate_etf_confluence_narrative("Gold", gold_cot, gold_cvd, gold_quadrant, headlines)
         silver_note = generate_etf_confluence_narrative("Silver", silver_cot, silver_cvd, silver_quadrant, headlines)
         content_el.clear()
+        content_el["style"] = "margin-top:10px; font-size:10.5px; font-weight:600; line-height:1.65;"
         b_tag = soup.new_tag("b")
+        b_tag["style"] = "color:#8765A1;"
         b_tag.string = "Positioning Confluence (COT vs. ETF Flow):"
         content_el.append(b_tag)
-        content_el.append(f" {gold_note} {silver_note}")
+        combined_notes = colorize_metal_words(f" {gold_note} {silver_note}")
+        content_el.append(BeautifulSoup(combined_notes, 'html.parser'))
         set_state_comment(soup, "etf_confluence_state", current, content_el.parent)
     else:
         print("ETF/COT confluence unchanged — keeping existing narrative.")
@@ -926,7 +947,7 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         el = soup.find(id="monetary-fiscal-content")
         if el:
             el.clear()
-            el.append(BeautifulSoup(mf, 'html.parser'))
+            el.append(BeautifulSoup(colorize_usd_symbols(mf), 'html.parser'))
     else:
         print("WARNING: Monetary & Fiscal narrative failed this run — left unchanged (stale).")
         all_succeeded = False
@@ -937,7 +958,7 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         el = soup.find(id="geopolitical-content")
         if el:
             el.clear()
-            el.append(BeautifulSoup(geo, 'html.parser'))
+            el.append(BeautifulSoup(colorize_usd_symbols(geo), 'html.parser'))
     else:
         print("WARNING: Geopolitical narrative failed this run — left unchanged (stale).")
         all_succeeded = False
@@ -948,7 +969,7 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         el = soup.find(id="supply-demand-content")
         if el:
             el.clear()
-            el.append(BeautifulSoup(sd, 'html.parser'))
+            el.append(BeautifulSoup(colorize_usd_symbols(sd), 'html.parser'))
     else:
         print("WARNING: Supply & Demand narrative failed this run — left unchanged (stale).")
         all_succeeded = False
