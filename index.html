@@ -16,15 +16,15 @@
     }
   })();
 </script>
-<!DOCTYPE html>
 
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Market Desk</title>
-<link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0a0c0b;
@@ -242,15 +242,18 @@
   #sess-london.active { color: #6000FF; border-color: rgba(96,0,255,0.35); background: rgba(96,0,255,0.08); }
   #sess-ny.active { color: #D900FF; border-color: rgba(217,0,255,0.35); background: rgba(217,0,255,0.08); }
 </style>
+<script src="https://unpkg.com/lightweight-charts@5.0.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
+
 <div class="head">
-<h1>Market Desk <span style="color:#b497d6; text-transform:none;">- HollowTzu</span></h1>
-<div class="sub" id="clock"></div>
+  <h1>Market Desk <span style="color:#b497d6; text-transform:none;">- HollowTzu</span></h1>
+  <div class="sub" id="clock"></div>
 </div>
+
 <div class="tradingview-widget-container">
-<div class="tradingview-widget-container__widget"></div>
-<script async="" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" type="text/javascript">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
   {
     "symbols": [
       {"proName": "BITSTAMP:BTCUSD", "title": "Bitcoin"},
@@ -268,134 +271,153 @@
   }
   </script>
 </div>
+
 <div class="grid" style="grid-template-columns:1fr;">
-<div class="panel" style="padding-bottom:18px;">
-<div class="panel-title">
-<span><span class="dot"></span>GLOBAL MARKETS DASHBOARD — DAILY BIAS &amp; RISK REGIME</span>
-<span style="font-size:10px; color:var(--text-dim); font-weight:400;">LIVE SESSION BIAS</span>
+  <div class="panel" style="padding-bottom:18px;">
+    <div class="panel-title">
+      <span><span class="dot"></span>GLOBAL MARKETS DASHBOARD — DAILY BIAS &amp; RISK REGIME</span>
+      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">LIVE SESSION BIAS</span>
+    </div>
+
+    <div class="mrkt-dashboard-bar">
+      <div class="risk-gauge-box">
+        <div class="risk-header">Cross-Asset Risk Gauge</div>
+        <div class="risk-status">MODERATE RISK-ON</div>
+        <div class="risk-meter"><div class="risk-fill"></div></div>
+        <div style="font-size:9.5px; color:var(--text-dim);">VIX: ~14.2 · Credit Spreads: Neutral · Safe-Haven Flow: Mixed</div>
+      </div>
+      <div class="next-event-box">
+        <div>
+          <span class="event-tag">HIGH IMPACT CATALYST</span>
+          <div style="font-size:12px; font-weight:600; margin-top:4px; color:var(--text);">US CPI / Fed Rate Expectations &amp; Geopolitical Mediation</div>
+          <div style="font-size:10px; color:var(--text-dim);">Affects: Equities, Precious Metals, Energy FX</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="event-time">Q3 2026 FOCUS</div>
+          <div style="font-size:9.5px; color:var(--text-dim);">Primary Driver: Sticky Inflation vs Deficits</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bias-grid">
+      <div class="bias-card">
+        <div class="bias-head">
+          <span class="bias-asset">NQ (NASDAQ 100)</span>
+          <span class="bias-badge badge-bullish">BULLISH · STRONG</span>
+        </div>
+        <div class="bias-meta">Swing Horizon: 1–3 Days | Day Bias: Long</div>
+        <div class="bias-driver">Mega-cap tech earnings guidance supporting index structure despite rate headwinds.</div>
+        <div class="bias-invalidation"><b>Flip condition:</b> Break &amp; hold below key structural support.</div>
+      </div>
+
+      <div class="bias-card">
+        <div class="bias-head">
+          <span class="bias-asset">S&amp;P 500 (ES)</span>
+          <span class="bias-badge badge-bullish">BULLISH · MODERATE</span>
+        </div>
+        <div class="bias-meta">Swing Horizon: 1–5 Days | Day Bias: Long</div>
+        <div class="bias-driver">Broader equity participation absorbing macro uncertainty and sticky yields.</div>
+        <div class="bias-invalidation"><b>Flip condition:</b> Rapid tightening of high-yield credit spreads.</div>
+      </div>
+
+      <div class="bias-card">
+        <div class="bias-head">
+          <span class="bias-asset">GOLD (XAUUSD)</span>
+          <span class="bias-badge badge-bearish">BEARISH · SHORT-TERM</span>
+        </div>
+        <div class="bias-meta">Swing Horizon: Intraday | Day Bias: Short / Range</div>
+        <div class="bias-driver">Fading Middle East escalation premiums and higher-for-longer Fed rate repricing weighing on paper gold.</div>
+        <div class="bias-invalidation"><b>Flip condition:</b> Sudden geopolitical breakdown pushing spot decisively higher.</div>
+      </div>
+
+      <div class="bias-card">
+        <div class="bias-head">
+          <span class="bias-asset">SILVER (XAGUSD)</span>
+          <span class="bias-badge badge-neutral">NEUTRAL · RANGE</span>
+        </div>
+        <div class="bias-meta">Swing Horizon: 1–3 Days | Day Bias: Mean Reversion</div>
+        <div class="bias-driver">Balanced between short-term rate pressures and structural industrial supply deficits.</div>
+        <div class="bias-invalidation"><b>Flip condition:</b> Decisive break out of multi-week technical consolidation range.</div>
+      </div>
+
+      <div class="bias-card">
+        <div class="bias-head">
+          <span class="bias-asset">BTCUSD (BITCOIN)</span>
+          <span class="bias-badge badge-bullish">BULLISH · STRONG</span>
+        </div>
+        <div class="bias-meta">Swing Horizon: 3–7 Days | Day Bias: Long</div>
+        <div class="bias-driver">Persistent institutional spot ETF inflows cushioning macro liquidity constraints.</div>
+        <div class="bias-invalidation"><b>Flip condition:</b> Sustained heavy net ETF capital outflows.</div>
+      </div>
+
+      <div class="bias-card">
+        <div class="bias-head">
+          <span class="bias-asset">CRUDE OIL (WTI)</span>
+          <span class="bias-badge badge-bearish">BEARISH · MODERATE</span>
+        </div>
+        <div class="bias-meta">Swing Horizon: 1–3 Days | Day Bias: Short</div>
+        <div class="bias-driver">Diplomatic mediation efforts cooling risk premiums despite active supply tightness.</div>
+        <div class="bias-invalidation"><b>Flip condition:</b> Regional military escalation impacting critical supply routes.</div>
+      </div>
+    </div>
+
+  </div>
 </div>
-<div class="mrkt-dashboard-bar">
-<!-- risk_state:{"status": "MODERATE RISK-ON", "vix_raw": 15.57} --><div class="risk-gauge-box">
-<div class="risk-header">Cross-Asset Risk Gauge</div>
-<div class="risk-status">MODERATE RISK-ON</div>
-<div class="risk-meter"><div class="risk-fill" style="width:55%"></div></div>
-<div style="font-size:9.5px; color:var(--text-dim);">VIX: ~15.6 · Credit Spreads: 2.84% (narrowing) · Safe-Haven Flow: Flight-to-Safety</div>
-</div>
-<div class="next-event-box">
-<div>
-<span class="event-tag">HIGH IMPACT CATALYST</span>
-<div style="font-size:12px; font-weight:600; margin-top:4px; color:var(--text);">Fed interest-rate decision rocks Wall Street inflation fears</div>
-<div style="font-size:10px; color:var(--text-dim);">Affects: Equities, Rates, FX</div>
-</div>
-<div style="text-align:right;">
-<div class="event-time">Q3 2026 FOCUS</div>
-<div style="font-size:9.5px; color:var(--text-dim);">Primary Driver: Inflation fears vs Growth</div>
-</div>
-</div>
-</div>
-<div class="bias-grid">
-<div class="bias-card">
-<div class="bias-head">
-<span class="bias-asset">NQ (NASDAQ 100)</span>
-<span class="bias-badge badge-bullish">BULLISH · SHORT-TERM</span>
-</div>
-<div class="bias-meta">Daily bias — AI-written, regenerated on live data each run</div>
-<div class="bias-driver">NQ (NASDAQ 100) is +0.60% vs. prior close.</div>
-<div class="bias-invalidation"><b>Flip condition:</b> Decisive break of the recent trading range.</div>
-</div>
-<div class="bias-card">
-<div class="bias-head">
-<span class="bias-asset">S&amp;P 500 (ES)</span>
-<span class="bias-badge badge-bullish">BULLISH · STRONG</span>
-</div>
-<div class="bias-meta">Daily bias — AI-written, regenerated on live data each run</div>
-<div class="bias-driver">S&amp;P 500 (ES) is +2.11% vs. prior close.</div>
-<div class="bias-invalidation"><b>Flip condition:</b> Decisive break of the recent trading range.</div>
-</div>
-<div class="bias-card">
-<div class="bias-head">
-<span class="bias-asset">GOLD (XAUUSD)</span>
-<span class="bias-badge badge-neutral">NEUTRAL · RANGE</span>
-</div>
-<div class="bias-meta">Daily bias — AI-written, regenerated on live data each run</div>
-<div class="bias-driver">GOLD (XAUUSD) is +1.30% vs. prior close. Managed Money net decreased by 5,036 contracts w/w.</div>
-<div class="bias-invalidation"><b>Flip condition:</b> Decisive break of the recent trading range.</div>
-</div>
-<div class="bias-card">
-<div class="bias-head">
-<span class="bias-asset">SILVER (XAGUSD)</span>
-<span class="bias-badge badge-neutral">NEUTRAL · RANGE</span>
-</div>
-<div class="bias-meta">Daily bias — AI-written, regenerated on live data each run</div>
-<div class="bias-driver">SILVER (XAGUSD) is +1.81% vs. prior close. Managed Money net decreased by 2,100 contracts w/w.</div>
-<div class="bias-invalidation"><b>Flip condition:</b> Decisive break of the recent trading range.</div>
-</div>
-<div class="bias-card">
-<div class="bias-head">
-<span class="bias-asset">BTCUSD (BITCOIN)</span>
-<span class="bias-badge badge-bullish">BULLISH · STRONG</span>
-</div>
-<div class="bias-meta">Daily bias — AI-written, regenerated on live data each run</div>
-<div class="bias-driver">BTCUSD (BITCOIN) is +1.54% vs. prior close.</div>
-<div class="bias-invalidation"><b>Flip condition:</b> Decisive break of the recent trading range.</div>
-</div>
-<div class="bias-card">
-<div class="bias-head">
-<span class="bias-asset">CRUDE OIL (WTI)</span>
-<span class="bias-badge badge-bearish">BEARISH · STRONG</span>
-</div>
-<div class="bias-meta">Daily bias — AI-written, regenerated on live data each run</div>
-<div class="bias-driver">CRUDE OIL (WTI) is -12.85% vs. prior close.</div>
-<div class="bias-invalidation"><b>Flip condition:</b> Decisive break of the recent trading range.</div>
-</div>
-</div>
-</div>
-</div>
+
 <div class="grid">
-<div class="panel" style="padding:12px 14px 14px;">
-<div class="panel-title"><span><span class="dot"></span>GOLD VS SILVER — MANAGED MONEY (SMT CHECK)</span></div>
-<div class="cot-meta" style="font-size:9.5px; margin-bottom:8px; line-height:1.4;">Comparing Managed Money net positioning shape across both metals to spot structural divergence.</div>
-<div class="summary-box" id="smt-summary" style="padding:7px 10px; margin-bottom:9px; font-size:10.5px; line-height:1.5;">Fetching Gold + Silver positioning…</div>
-<div class="status" id="smt-status" style="font-size:10px; padding:10px 0;">Loading CFTC API…</div>
-<svg id="smt-chart" style="width:100%; height:auto; display:none;" viewbox="0 0 560 155"></svg>
-<div style="display:flex; gap:12px; margin-top:5px; font-size:9px; color:var(--text-dim);">
-<span><span style="display:inline-block;width:8px;height:2px;background:#ffb020;vertical-align:middle;margin-right:4px;"></span>Gold net</span>
-<span><span style="display:inline-block;width:8px;height:2px;background:#7fa8a3;vertical-align:middle;margin-right:4px;"></span>Silver net</span>
-</div>
-<!-- INSTITUTIONAL SESSION DESK NOTE (JULY 2026 LIVE CONTEXT) -->
-<div style="margin-top:12px; padding:10px 12px; background:#151713; border-left:2px solid var(--cool); font-size:10.5px; line-height:1.6; color:var(--text);">
-<div style="font-family:'Barlow Condensed', sans-serif; font-size:13px; font-weight:700; color:#EDD9FF; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:4px;">
+
+  <div class="panel" style="padding:12px 14px 14px;">
+    <div class="panel-title"><span><span class="dot"></span>GOLD VS SILVER — MANAGED MONEY (SMT CHECK)</span></div>
+    <div class="cot-meta" style="font-size:9.5px; margin-bottom:8px; line-height:1.4;">Comparing Managed Money net positioning shape across both metals to spot structural divergence.</div>
+    <div class="summary-box" id="smt-summary" style="padding:7px 10px; margin-bottom:9px; font-size:10.5px; line-height:1.5;">Fetching Gold + Silver positioning&hellip;</div>
+    <div id="smt-status" class="status" style="font-size:10px; padding:10px 0;">Loading CFTC API&hellip;</div>
+    <svg id="smt-chart" viewBox="0 0 560 155" style="width:100%; height:auto; display:none;"></svg>
+    <div style="display:flex; gap:12px; margin-top:5px; font-size:9px; color:var(--text-dim);">
+      <span><span style="display:inline-block;width:8px;height:2px;background:#ffb020;vertical-align:middle;margin-right:4px;"></span>Gold net</span>
+      <span><span style="display:inline-block;width:8px;height:2px;background:#7fa8a3;vertical-align:middle;margin-right:4px;"></span>Silver net</span>
+    </div>
+
+    <!-- INSTITUTIONAL SESSION DESK NOTE (JULY 2026 LIVE CONTEXT) -->
+    <div style="margin-top:12px; padding:10px 12px; background:#151713; border-left:2px solid var(--cool); font-size:10.5px; line-height:1.6; color:var(--text);">
+      <div style="font-family:'Barlow Condensed', sans-serif; font-size:13px; font-weight:700; color:#EDD9FF; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:4px;">
         INSTITUTIONAL SESSION DESK NOTE — MACRO REGIME
       </div>
-<div><div style="font-size:9.5px; color:#8a8f88; margin-bottom:6px;">As of Aug 04, 2026 — 09:25 ET — NEW YORK session</div><b style="color:#9BE7ED;">GEOPOLITICAL &amp; RATE TRANSMISSION:</b> (Unsummarized — AI unavailable this run) Recent headline: "Crown Labels boosts digital press capacity with Domino"<br/><br/><b style="color:#9BE7ED;">INTRADAY BIAS &amp; LIQUIDITY MAP:</b> [NEW YORK] Gold: resistance 4125.10009765625, support 4017.89990234375, volume zone 4026.4000244140625. Silver: resistance 59.39500045776367, support 57.224998474121094. Gold's Managed Money net position decreased week-over-week; silver's decreased. Positioning confirms across the two metals.</div>
-</div>
-</div>
-<div class="panel" style="padding:0; display:flex; flex-direction:column; max-height:610px;">
-<div class="panel-title" style="padding:16px 20px 4px; margin:0; flex-shrink:0;">
-<span><span class="dot"></span>ECONOMIC CALENDAR</span>
-</div>
-<div style="flex-shrink:0; padding:6px 20px 10px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-<div style="display:flex; align-items:center; gap:8px;">
-<span style="font-size:9.5px; padding:3px 9px; border-radius:10px; background:rgba(171,232,30,0.14); color:#ABE81E; letter-spacing:0.06em; font-weight:600;">ACTUAL</span>
-<span style="color:var(--text-dim); font-size:11px;">→</span>
-<span style="font-size:9.5px; padding:3px 9px; border-radius:10px; background:rgba(83,207,163,0.15); color:#53CFA3; letter-spacing:0.06em; font-weight:600;">FORECAST</span>
-<span style="color:var(--text-dim); font-size:11px;">→</span>
-<span style="font-size:9.5px; padding:3px 9px; border-radius:10px; background:rgba(138,143,136,0.15); color:var(--text-dim); letter-spacing:0.06em; font-weight:600;">PREVIOUS</span>
-</div>
-<div style="display:flex; align-items:center; gap:6px;">
-<span class="session-pill" id="sess-tokyo">TOKYO</span>
-<span class="session-pill" id="sess-london">LONDON</span>
-<span class="session-pill" id="sess-ny">NEW YORK</span>
-</div>
-</div>
-<div style="overflow-y:auto; padding:14px 20px 20px;">
-<div id="calendar-fallback" style="font-size:11px; color:var(--text-dim); margin-bottom:10px; display:none;">
+      <div>
+        <b style="color:#9BE7ED;">GEOPOLITICAL &amp; RATE TRANSMISSION:</b> Markets are actively balancing diplomatic mediation headlines out of the Middle East against sticky inflation readings. While short-term safe-haven premiums soften on ceasefire talks, energy price stickiness keeps the Fed hawkish, maintaining real yield headwinds that cap aggressive upside extensions.<br><br>
+        <b style="color:#9BE7ED;">INTRADAY BIAS &amp; LIQUIDITY MAP:</b> Precious metals consolidate as industrial demand drivers remain unyielding. Silver continues to absorb strong order-flow support backed by structural supply shortfalls and green tech consumption, providing a solid floor against macro currency volatility.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="padding:0; display:flex; flex-direction:column; max-height:610px;">
+    <div class="panel-title" style="padding:16px 20px 4px; margin:0; flex-shrink:0;">
+      <span><span class="dot"></span>ECONOMIC CALENDAR</span>
+    </div>
+    
+    <div style="flex-shrink:0; padding:6px 20px 10px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:9.5px; padding:3px 9px; border-radius:10px; background:rgba(171,232,30,0.14); color:#ABE81E; letter-spacing:0.06em; font-weight:600;">ACTUAL</span>
+        <span style="color:var(--text-dim); font-size:11px;">→</span>
+        <span style="font-size:9.5px; padding:3px 9px; border-radius:10px; background:rgba(83,207,163,0.15); color:#53CFA3; letter-spacing:0.06em; font-weight:600;">FORECAST</span>
+        <span style="color:var(--text-dim); font-size:11px;">→</span>
+        <span style="font-size:9.5px; padding:3px 9px; border-radius:10px; background:rgba(138,143,136,0.15); color:var(--text-dim); letter-spacing:0.06em; font-weight:600;">PREVIOUS</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span class="session-pill" id="sess-tokyo">TOKYO</span>
+        <span class="session-pill" id="sess-london">LONDON</span>
+        <span class="session-pill" id="sess-ny">NEW YORK</span>
+      </div>
+    </div>
+
+    <div style="overflow-y:auto; padding:14px 20px 20px;">
+      <div id="calendar-fallback" style="font-size:11px; color:var(--text-dim); margin-bottom:10px; display:none;">
         Widget didn't load — likely blocked by a sandboxed preview.
-        <a href="https://www.tradingview.com/economic-calendar/" style="color:var(--cool)" target="_blank">Open full TradingView Calendar →</a>
-</div>
-<div class="tradingview-widget-container">
-<div class="tradingview-widget-container__widget" id="tv-cal-widget"></div>
-<script async="" onerror="document.getElementById('calendar-fallback').style.display='block'" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" type="text/javascript">
+        <a href="https://www.tradingview.com/economic-calendar/" target="_blank" style="color:var(--cool)">Open full TradingView Calendar →</a>
+      </div>
+      <div class="tradingview-widget-container">
+        <div class="tradingview-widget-container__widget" id="tv-cal-widget"></div>
+        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-events.js" async
+          onerror="document.getElementById('calendar-fallback').style.display='block'">
         {
           "colorTheme": "dark",
           "isTransparent": true,
@@ -405,16 +427,18 @@
           "importanceFilter": "0,1"
         }
         </script>
+      </div>
+    </div>
+  </div>
+
 </div>
-</div>
-</div>
-</div>
+
 <div class="grid">
-<div class="panel">
-<div class="panel-title"><span><span class="dot"></span>GOLD — XAUUSD (CANDLES)</span></div>
-<div class="tradingview-widget-container">
-<div class="tradingview-widget-container__widget"></div>
-<script async="" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" type="text/javascript">
+  <div class="panel">
+    <div class="panel-title"><span><span class="dot"></span>GOLD — XAUUSD (CANDLES)</span></div>
+    <div class="tradingview-widget-container">
+      <div class="tradingview-widget-container__widget"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
       {
         "autosize": true,
         "symbol": "OANDA:XAUUSD",
@@ -438,13 +462,13 @@
         }
       }
       </script>
-</div>
-</div>
-<div class="panel">
-<div class="panel-title"><span><span class="dot"></span>SILVER — XAGUSD (CANDLES)</span></div>
-<div class="tradingview-widget-container">
-<div class="tradingview-widget-container__widget"></div>
-<script async="" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" type="text/javascript">
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title"><span><span class="dot"></span>SILVER — XAGUSD (CANDLES)</span></div>
+    <div class="tradingview-widget-container">
+      <div class="tradingview-widget-container__widget"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
       {
         "autosize": true,
         "symbol": "OANDA:XAGUSD",
@@ -468,104 +492,132 @@
         }
       }
       </script>
+    </div>
+  </div>
 </div>
-</div>
-</div>
+
 <div class="grid" style="grid-template-columns:1fr;">
-<div class="panel">
-<div class="panel-title"><span><span class="dot"></span>COT DETAIL — BY MARKET</span>
-<select id="market-select">
-<option data-commlabel="Commercials" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-dataset="72hh-3qpy" data-label="Managed Money" data-long="m_money_positions_long_all" data-search="GOLD - COMMODITY EXCHANGE" data-short="m_money_positions_short_all" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all" value="GOLD">Gold</option>
-<option data-commlabel="Commercials" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-dataset="72hh-3qpy" data-label="Managed Money" data-long="m_money_positions_long_all" data-search="SILVER - COMMODITY EXCHANGE" data-short="m_money_positions_short_all" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all" value="SILVER">Silver</option>
-<option data-commlabel="Commercials" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-dataset="72hh-3qpy" data-label="Managed Money" data-long="m_money_positions_long_all" data-search="CRUDE OIL, LIGHT SWEET" data-short="m_money_positions_short_all" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all" value="CRUDE">Crude Oil (WTI)</option>
-<option data-commlabel="Commercial" data-commlong="comm_positions_long_all" data-commshort="comm_positions_short_all" data-dataset="6dca-aqww" data-label="Non-Commercial (Speculators)" data-long="noncomm_positions_long_all" data-search="USD INDEX - ICE FUTURES" data-short="noncomm_positions_short_all" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all" value="USD">US Dollar Index</option>
-<option data-commlabel="Commercials" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-dataset="72hh-3qpy" data-label="Managed Money" data-long="m_money_positions_long_all" data-search="NATURAL GAS - NEW YORK" data-short="m_money_positions_short_all" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all" value="NATGAS">Natural Gas</option>
-</select>
+  <div class="panel">
+    <div class="panel-title"><span><span class="dot"></span>COT DETAIL — BY MARKET</span>
+      <select id="market-select">
+        <option value="GOLD" data-dataset="72hh-3qpy" data-long="m_money_positions_long_all" data-short="m_money_positions_short_all" data-label="Managed Money" data-search="GOLD - COMMODITY EXCHANGE" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-commlabel="Commercials" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all">Gold</option>
+        <option value="SILVER" data-dataset="72hh-3qpy" data-long="m_money_positions_long_all" data-short="m_money_positions_short_all" data-label="Managed Money" data-search="SILVER - COMMODITY EXCHANGE" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-commlabel="Commercials" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all">Silver</option>
+        <option value="CRUDE" data-dataset="72hh-3qpy" data-long="m_money_positions_long_all" data-short="m_money_positions_short_all" data-label="Managed Money" data-search="CRUDE OIL, LIGHT SWEET" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-commlabel="Commercials" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all">Crude Oil (WTI)</option>
+        <option value="USD" data-dataset="6dca-aqww" data-long="noncomm_positions_long_all" data-short="noncomm_positions_short_all" data-label="Non-Commercial (Speculators)" data-search="USD INDEX - ICE FUTURES" data-commlong="comm_positions_long_all" data-commshort="comm_positions_short_all" data-commlabel="Commercial" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all">US Dollar Index</option>
+        <option value="NATGAS" data-dataset="72hh-3qpy" data-long="m_money_positions_long_all" data-short="m_money_positions_short_all" data-label="Managed Money" data-search="NATURAL GAS - NEW YORK" data-commlong="prod_merc_positions_long_all" data-commshort="prod_merc_positions_short_all" data-commlabel="Commercials" data-smalllong="nonrept_positions_long_all" data-smallshort="nonrept_positions_short_all">Natural Gas</option>
+      </select>
+    </div>
+    <div class="cot-meta">CFTC Disaggregated Futures-Only report · released Fridays 3:30pm ET · positions as of prior Tuesday</div>
+
+    <div class="summary-box" id="summary">Fetching latest report&hellip;</div>
+
+    <div id="cot-status" class="status">Contacting publicreporting.cftc.gov &hellip;</div>
+    <div id="category-header" style="font-size:10.5px; color:var(--text-dim); letter-spacing:0.05em; margin-bottom:6px;"></div>
+    <table id="cot-table" style="display:none">
+      <thead>
+        <tr><th>Report Date</th><th>Long</th><th>Short</th><th>Net</th><th>Δ Net</th><th>Open Int.</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div style="font-size:10px; color:var(--text-dim); letter-spacing:0.03em; margin-bottom:4px;">LONG / SHORT WEEKLY (Long above zero, Short mirrored below)</div>
+    <div id="bars-chart" style="height:220px;"></div>
+
+    <div style="margin-top:22px; padding-top:16px; border-top:1px solid var(--line);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="font-size:11px; color:var(--amber); letter-spacing:0.05em;">NET POSITION TREND — COMMERCIALS vs LARGE SPEC vs SMALL SPEC</div>
+        <div>
+          <button id="trend-weekly-btn" class="trend-toggle-btn active" onclick="setTrendPeriod('weekly')">Weekly</button>
+          <button id="trend-monthly-btn" class="trend-toggle-btn" onclick="setTrendPeriod('monthly')">Monthly</button>
+        </div>
+      </div>
+      <div id="trend-status" style="font-size:11px; color:var(--text-dim); padding:10px 0;">Loading trend data…</div>
+      <div id="trend-chart" style="height:260px; display:none;"></div>
+      <div style="display:flex; gap:14px; margin-top:6px; font-size:9.5px; color:var(--text-dim); flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:10px;height:2px;background:#a992e0;vertical-align:middle;margin-right:4px;"></span>Commercials (Producer/Merchant)</span>
+        <span><span style="display:inline-block;width:10px;height:2px;background:#ffb020;vertical-align:middle;margin-right:4px;"></span>Large Speculators (Managed Money)</span>
+        <span><span style="display:inline-block;width:10px;height:2px;background:#00D9FF;vertical-align:middle;margin-right:4px;"></span>Small Speculators (Non-Reportable) — right axis</span>
+      </div>
+    </div>
+
+  </div>
 </div>
-<div class="cot-meta">CFTC Disaggregated Futures-Only report · released Fridays 3:30pm ET · positions as of prior Tuesday</div>
-<div class="summary-box" id="summary">Fetching latest report…</div>
-<div class="status" id="cot-status">Contacting publicreporting.cftc.gov …</div>
-<div id="category-header" style="font-size:10.5px; color:var(--text-dim); letter-spacing:0.05em; margin-bottom:6px;"></div>
-<table id="cot-table" style="display:none">
-<thead>
-<tr><th>Report Date</th><th>Long</th><th>Short</th><th>Net</th><th>Δ Net</th><th>Open Int.</th></tr>
-</thead>
-<tbody></tbody>
-</table>
-<div class="bars" id="bars"></div>
-<div style="margin-top:22px; padding-top:16px; border-top:1px solid var(--line);">
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-<div style="font-size:11px; color:var(--amber); letter-spacing:0.05em;">NET POSITION TREND — COMMERCIALS vs LARGE SPEC vs SMALL SPEC</div>
-<div>
-<button class="trend-toggle-btn active" id="trend-weekly-btn" onclick="setTrendPeriod('weekly')">Weekly</button>
-<button class="trend-toggle-btn" id="trend-monthly-btn" onclick="setTrendPeriod('monthly')">Monthly</button>
-</div>
-</div>
-<div id="trend-status" style="font-size:11px; color:var(--text-dim); padding:10px 0;">Loading trend data…</div>
-<svg id="trend-chart" style="width:100%; height:auto; display:none;" viewbox="0 0 700 220"></svg>
-<div style="display:flex; gap:14px; margin-top:6px; font-size:9.5px; color:var(--text-dim); flex-wrap:wrap;">
-<span><span style="display:inline-block;width:10px;height:2px;background:#a992e0;vertical-align:middle;margin-right:4px;"></span>Commercials (Producer/Merchant)</span>
-<span><span style="display:inline-block;width:10px;height:2px;background:#ffb020;vertical-align:middle;margin-right:4px;"></span>Large Speculators (Managed Money)</span>
-<span><span style="display:inline-block;width:10px;height:2px;background:#7fa8a3;vertical-align:middle;margin-right:4px;"></span>Small Speculators (Non-Reportable)</span>
-</div>
-</div>
-</div>
-</div>
+
 <div class="grid" style="grid-template-columns:1fr;">
-<div class="panel">
-<div class="panel-title"><span><span class="dot"></span>FUNDAMENTAL ANALYSIS — GOLD &amp; USD · Q3 2026</span></div>
-<div class="cot-meta" style="margin-bottom:14px;">
+  <div class="panel">
+    <div class="panel-title"><span><span class="dot"></span>FUNDAMENTAL ANALYSIS — GOLD &amp; USD · Q3 2026</span></div>
+    <div class="cot-meta" style="margin-bottom:14px;">
       Direct factor assessment on USD vs Gold for <b>Q3 2026</b>. US debt is fetched live from Treasury on every load. Macro policy, geopolitics, and central bank reserve flows are updated dynamically: <span id="fund-asof" style="color:var(--text);"></span>.
     </div>
-<div class="striking-note">
-<div class="striking-note-title">⚡ STRIKING INSTITUTIONAL NOTE: THE "TARGET REVISION" DECEPTION</div>
-<div id="striking-note-content" style="font-size:11.5px; line-height:1.7; color:var(--text);">THE TARGET REVISION DECEPTION
 
-As Wall Street grapples with a hawkish Fed rate decision and violent mega-cap valuation resets, sell-side analysts are predictably slashing their near-term equity price targets. Investors must not mistake these tactical adjustments—driven purely by short-term discount rate repricing—for a deterioration of the underlying secular investment thesis. Structural pricing power in tight operational sectors remains entirely intact despite the macroeconomic noise. Look past the headline cuts and focus on long-run enterprise value.</div>
+    <div class="striking-note">
+      <div class="striking-note-title">⚡ STRIKING INSTITUTIONAL NOTE: THE "TARGET REVISION" DECEPTION</div>
+      <div style="font-size:11.5px; line-height:1.7; color:var(--text);" id="striking-note-content">
+        Do not mistake near-term bank target revisions (such as sell-side desks adjusting tactical targets on real yield spikes) as a secular trend reversal. Target repricing reflects short-term real interest rate mechanics while structural sovereign fiscal deficits and unhedged central bank reserve accumulation remain fully intact. The institutional desk consensus views near-term real yield friction as a medium-term value accumulation phase.
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px;" id="monetary-fiscal-section">
+      <div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">MONETARY &amp; FISCAL POLICY (Q3 2026)</div>
+      <div style="font-size:11.5px; line-height:1.75; color:var(--text);" id="monetary-fiscal-content">
+        <span style="color:var(--usd-up); font-weight:700;">▲ USD</span> — Fed policy expectations remain sensitive to sticky inflation prints, keeping real bond yields elevated and serving as a near-term mechanical headwind for non-yielding bullion.<br><br>
+        <span style="color:var(--usd-down); font-weight:700;">▼ USD</span> — Long-term sovereign fiscal trajectories (elevated debt-to-GDP ratios) continue to force central banks toward physical asset diversification, bypassing fiat structural degradation.
+      </div>
+      <div style="font-size:10.5px; color:var(--cool); margin-top:8px;" id="fiscal-live">Loading live Treasury debt figure…</div>
+    </div>
+
+    <div style="margin-bottom:16px;" id="real-yield-section">
+      <div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">REAL YIELDS &amp; RATE TRANSMISSION (Q3 2026)</div>
+      <div style="font-size:11.5px; line-height:1.75; color:var(--text);" id="real-yield-content">
+        Loading live real yield / breakeven data…
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px;" id="geopolitical-section">
+      <div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">GEOPOLITICAL RISK &amp; SENTIMENT (Q3 2026)</div>
+      <div style="font-size:11.5px; line-height:1.75; color:var(--text);" id="geopolitical-content">
+        <span style="color:var(--usd-up); font-weight:700;">▲ USD</span> — High short-term yields attract defensive capital into USD cash instruments during consolidation phases.<br><br>
+        <span style="color:var(--usd-down); font-weight:700;">▼ USD</span> — <b>Diplomacy vs. Supply Chokepoints:</b> Markets are currently balancing diplomatic efforts to de-escalate Middle East friction against ongoing maritime security risks. Energy price sensitivity maintains underlying inflation risks, supporting gold's structural safe-haven baseline.
+      </div>
+    </div>
+
+    <div id="supply-demand-section">
+      <div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">SUPPLY &amp; DEMAND (GOLD &amp; SILVER)</div>
+      <div style="font-size:11.5px; line-height:1.75; color:var(--text);" id="supply-demand-content">
+        <span style="color:var(--usd-down); font-weight:700;">▼ USD</span> — <b>Central Bank Reserve Building:</b> Official sector accumulation persists to mitigate long-term foreign exchange concentration risks.<br><br>
+        <span style="color:var(--usd-down); font-weight:700;">▼ USD</span> — <b>Multiterm Silver Market Deficit:</b> The physical silver market faces its sixth consecutive annual supply shortfall, driven by unyielding structural consumption across AI data center infrastructure and photovoltaic manufacturing.
+      </div>
+      <div id="etf-confluence-content" style="margin-top:10px; font-size:10.5px; font-weight:600; line-height:1.65;">Loading COT vs. ETF-flow confluence read…</div>
+    </div>
+
+    <div style="margin-top:14px; font-size:10.5px;">
+      <button onclick="document.getElementById('confluence-sidebar').classList.add('open'); document.getElementById('sidebar-overlay').classList.add('open');" style="background:none; border:none; color:var(--cool); font-family:'IBM Plex Mono', monospace; font-size:10.5px; cursor:pointer; padding:0; text-decoration:underline;">→ Learn: how to read COT vs ETF-flow confluence</button>
+    </div>
+  </div>
 </div>
-<!-- daily_levels_gold:{"date": "2026-08-04", "resistance": 4125.10009765625, "support": 4017.89990234375, "volume_zone": 4026.4000244140625} --><!-- daily_levels_silver:{"date": "2026-08-04", "resistance": 59.39500045776367, "support": 57.224998474121094, "volume_zone": 58.80500030517578} --><!-- fundamental_narrative_state:{"flags": {"risk_status": "MODERATE RISK-ON", "real_yield_delta_sign": -1}, "generated_at": "2026-07-31T13:55:33.191086"} --><div id="monetary-fiscal-section" style="margin-bottom:16px;">
-<div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">MONETARY &amp; FISCAL POLICY (Q3 2026)</div>
-<div id="monetary-fiscal-content" style="font-size:11.5px; line-height:1.75; color:var(--text);"><b><span style="color:#00FF36; font-weight:700;">▲ USD</span></b> — The Federal Reserve interest-rate decision has rocked Wall Street's inflation fears, keeping the 10Y real yield anchored at 2.41% (+0.00) and supporting near-term policy positioning.<br/><br/><b><span style="color:#FA300C; font-weight:700;">▼ USD</span></b> — Structural fiscal deterioration weighs heavily as US total public debt mounts to $39.80 trillion, exposing long-term solvency vulnerabilities.</div>
-<div id="fiscal-live" style="font-size:10.5px; color:var(--cool); margin-top:8px;">Loading live Treasury debt figure…</div>
-</div>
-<!-- real_yield_state:{"scenario": "tightening"} --><div id="real-yield-section" style="margin-bottom:16px;">
-<div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">REAL YIELDS &amp; RATE TRANSMISSION (Q3 2026)</div>
-<div id="real-yield-content" style="font-size:11.5px; line-height:1.75; color:var(--text);">Real yield 2.47% (+0.06), breakeven 2.27% (-0.01). Nominal yields rising while breakevens are flat — real yields are rising because policy is tightening. Textbook bearish-gold mechanics.</div>
-</div>
-<div id="geopolitical-section" style="margin-bottom:16px;">
-<div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">GEOPOLITICAL RISK &amp; SENTIMENT (Q3 2026)</div>
-<div id="geopolitical-content" style="font-size:11.5px; line-height:1.75; color:var(--text);"><b><span style="color:#00FF36; font-weight:700;">▲ USD</span></b> — Wall Street inflation fears rock markets as 3 Fed dissenters warn that waiting to raise interest rates risks making inflation harder to tame.<br/><br/><b><span style="color:#FA300C; font-weight:700;">▼ USD</span></b> — Apple heads for a $460 billion wipeout, posting its worst post-earnings stock drop in 13 years and sapping risk appetite.</div>
-</div>
-<!-- etf_confluence_state:{"gold": "quiet_accumulation", "silver": "quiet_accumulation"} --><div id="supply-demand-section">
-<div style="font-size:11px; color:var(--amber); letter-spacing:0.05em; margin-bottom:6px;">SUPPLY &amp; DEMAND (GOLD &amp; SILVER)</div>
-<div id="supply-demand-content" style="font-size:11.5px; line-height:1.75; color:var(--text);"><b><span style="color:#FA300C; font-weight:700;">▼ USD</span></b> — Official sector accumulation remained a pillar of support as central banks continued their steady reserve buying.<br/><br/><b><span style="color:#FA300C; font-weight:700;">▼ USD</span></b> — Physical market conditions maintained underlying support for precious metals despite shifting macroeconomic headwinds.</div>
-<div id="etf-confluence-content" style="margin-top:10px; font-size:10.5px; font-weight:600; line-height:1.65;"><b style="color:#8765A1;">Positioning Confluence (COT vs. ETF Flow):</b> <span style="color:#FFB020;">Gold</span> exhibits a stealth-strength signal as Managed Money sheds 5,036 contracts while ETFs simultaneously accumulate net buy-volume. This divergence reveals patient capital absorbing supply while speculative positioning de-risks. <span style="color:#C7CBD1;">Silver</span> exhibits a stealth-strength signal as Managed Money cuts 2,100 contracts while ETF buyers accumulate via net buy-volume. This divergence reveals patient capital absorbing speculator de-risking.</div>
-</div>
-<div style="margin-top:14px; font-size:10.5px;">
-<button onclick="document.getElementById('confluence-sidebar').classList.add('open'); document.getElementById('sidebar-overlay').classList.add('open');" style="background:none; border:none; color:var(--cool); font-family:'IBM Plex Mono', monospace; font-size:10.5px; cursor:pointer; padding:0; text-decoration:underline;">→ Learn: how to read COT vs ETF-flow confluence</button>
-</div>
-</div>
-</div>
+
 <div class="grid" style="grid-template-columns:1fr;">
-<div class="panel">
-<div class="panel-title"><span><span class="dot"></span>INSTITUTIONAL POSITIONING — SELL-SIDE TARGET SNAPSHOT</span></div>
-<div class="cot-meta" style="margin-bottom:12px;">Active sell-side consensus tracking. Directional markers denote institutional directional bias versus spot prices (Bullish: <span class="inst-bull">▲</span> | Bearish: <span class="inst-bear">▼</span>). Manually research-verified — last checked 2026-07-24. Not auto-generated: real price targets attributed to named banks are too high-stakes to leave to an unsupervised free model; this table is refreshed on request, same as any dated research.</div>
-<table style="font-size:11px;">
-<thead><tr><th>Firm</th><th>Target Profile</th><th>Dir.</th><th style="text-align:left;">Institutional Thesis Summary</th></tr></thead>
-<tbody>
-<tr><td style="color:#EBF2FF;">Wells Fargo</td><td>Bullish Outlier — $6,100–$6,300</td><td class="inst-bull">▲</td><td style="text-align:left;">Anticipates accelerated sovereign currency debasement legs; unchanged since March 2026 upgrade.</td></tr>
-<tr><td style="color:#EBF2FF;">Bank of America</td><td>Structural Bull — $4,800 (Q4 2026)</td><td class="inst-bull">▲</td><td style="text-align:left;">Trimmed from $6,000 as investor demand slowed; still flags fiscal deficits and low investor allocations as underappreciated.</td></tr>
-<tr><td style="color:#EBF2FF;">UBS</td><td>Constructive Long-Term — $5,200 (12mo)</td><td class="inst-bull">▲</td><td style="text-align:left;">Relies on consistent central bank reserve buying to floor pullbacks; calls for patience while real yields stay elevated.</td></tr>
-<tr><td style="color:#EBF2FF;">Morgan Stanley</td><td>H2 Growth Focus — $5,200 upside / $4,400 base</td><td class="inst-bull">▲</td><td style="text-align:left;">Upside conditional on stronger ETF inflows materializing; base case is the more conservative anchor across the group.</td></tr>
-<tr><td style="color:#EBF2FF;">Goldman Sachs</td><td>Debasement Hedge — $4,900 (Q4 2026)</td><td class="inst-bull">▲</td><td style="text-align:left;">Cut from $5,400 on Jun 20 as 2026 rate cuts were removed from their Fed call; long-run debasement thesis intact.</td></tr>
-<tr><td style="color:#EBF2FF;">JPMorgan</td><td>Tactical &amp; Cycle Split — $4,500 (Q4 2026)</td><td class="inst-bull">▲</td><td style="text-align:left;">Sharp cut from $6,000 on hawkish Fed repricing; most bearish near-term of the group, but structural 2027 bull case unchanged.</td></tr>
-</tbody>
-</table>
+  <div class="panel">
+    <div class="panel-title"><span><span class="dot"></span>INSTITUTIONAL POSITIONING — SELL-SIDE TARGET SNAPSHOT</span></div>
+    <div class="cot-meta" style="margin-bottom:12px;">Active sell-side consensus tracking. Directional markers denote institutional directional bias versus spot prices (Bullish: <span class="inst-bull">▲</span> | Bearish: <span class="inst-bear">▼</span>). Manually research-verified — last checked 2026-07-24. Not auto-generated: real price targets attributed to named banks are too high-stakes to leave to an unsupervised free model; this table is refreshed on request, same as any dated research.</div>
+    <table style="font-size:11px;">
+      <thead><tr><th>Firm</th><th>Target Profile</th><th>Dir.</th><th style="text-align:left;">Institutional Thesis Summary</th></tr></thead>
+      <tbody>
+        <tr><td style="color:#EBF2FF;">Wells Fargo</td><td>Bullish Outlier — $6,100–$6,300</td><td class="inst-bull">▲</td><td style="text-align:left;">Anticipates accelerated sovereign currency debasement legs; unchanged since March 2026 upgrade.</td></tr>
+        <tr><td style="color:#EBF2FF;">Bank of America</td><td>Structural Bull — $4,800 (Q4 2026)</td><td class="inst-bull">▲</td><td style="text-align:left;">Trimmed from $6,000 as investor demand slowed; still flags fiscal deficits and low investor allocations as underappreciated.</td></tr>
+        <tr><td style="color:#EBF2FF;">UBS</td><td>Constructive Long-Term — $5,200 (12mo)</td><td class="inst-bull">▲</td><td style="text-align:left;">Relies on consistent central bank reserve buying to floor pullbacks; calls for patience while real yields stay elevated.</td></tr>
+        <tr><td style="color:#EBF2FF;">Morgan Stanley</td><td>H2 Growth Focus — $5,200 upside / $4,400 base</td><td class="inst-bull">▲</td><td style="text-align:left;">Upside conditional on stronger ETF inflows materializing; base case is the more conservative anchor across the group.</td></tr>
+        <tr><td style="color:#EBF2FF;">Goldman Sachs</td><td>Debasement Hedge — $4,900 (Q4 2026)</td><td class="inst-bull">▲</td><td style="text-align:left;">Cut from $5,400 on Jun 20 as 2026 rate cuts were removed from their Fed call; long-run debasement thesis intact.</td></tr>
+        <tr><td style="color:#EBF2FF;">JPMorgan</td><td>Tactical &amp; Cycle Split — $4,500 (Q4 2026)</td><td class="inst-bull">▲</td><td style="text-align:left;">Sharp cut from $6,000 on hawkish Fed repricing; most bearish near-term of the group, but structural 2027 bull case unchanged.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
-</div>
+
 <div class="footnote">
   Data: CFTC Public Reporting API (publicreporting.cftc.gov) · US Treasury API (fiscaldata.treasury.gov) · Economic calendar by <a href="https://www.tradingview.com/" target="_blank">TradingView</a>. Displayed for personal institutional reference only.
 </div>
+
 <script>
 function updateClock(){
   const now = new Date();
@@ -767,7 +819,6 @@ async function loadCOT(opts){
   const tableEl = document.getElementById('cot-table');
   const tbody = tableEl.querySelector('tbody');
   const summaryEl = document.getElementById('summary');
-  const barsEl = document.getElementById('bars');
   const categoryHeader = document.getElementById('category-header');
 
   categoryHeader.textContent = 'Category: ' + label;
@@ -776,7 +827,6 @@ async function loadCOT(opts){
   statusEl.textContent = 'Contacting publicreporting.cftc.gov …';
   tableEl.style.display = 'none';
   tbody.innerHTML = '';
-  barsEl.innerHTML = '';
 
   const where = `upper(market_and_exchange_names) like upper('%${search}%') AND upper(market_and_exchange_names) not like upper('%MICRO%')`;
   const url = `https://publicreporting.cftc.gov/resource/${dataset}.json?$where=${encodeURIComponent(where)}&$order=report_date_as_yyyy_mm_dd DESC&$limit=14`;
@@ -831,16 +881,7 @@ async function loadCOT(opts){
 
     summaryEl.innerHTML = `${label} is <b>${dirWord}</b> by <b>${Math.abs(latest.net).toLocaleString()}</b> contracts as of CFTC report date <b>${latest.date}</b>, ${deltaWord}. Institutional positioning is <b>${posWord}</b> (exact percentile ~${pct}%).`;
 
-    const recent = parsed.slice(0,10).reverse();
-    const maxVal = Math.max(...recent.map(r=>Math.max(r.long, r.short)));
-    recent.forEach(r => {
-      const rowL = document.createElement('div'); rowL.className='bar-row';
-      rowL.innerHTML = `<div class="bar-label">${r.date.slice(5)} L</div><div class="bar-track"><div class="bar-fill" style="width:${(r.long/maxVal*100).toFixed(1)}%; background:var(--bar-long);"></div></div>`;
-      const rowS = document.createElement('div'); rowS.className='bar-row';
-      rowS.innerHTML = `<div class="bar-label">${r.date.slice(5)} S</div><div class="bar-track"><div class="bar-fill" style="width:${(r.short/maxVal*100).toFixed(1)}%; background:var(--bar-short);"></div></div>`;
-      barsEl.appendChild(rowL);
-      barsEl.appendChild(rowS);
-    });
+    renderBarsChart(parsed.slice(0,26).reverse());
 
   }catch(err){
     console.error('CFTC fetch failed:', err);
@@ -893,65 +934,62 @@ function resampleMonthly(rows){
   return Object.keys(byMonth).sort().map(k => byMonth[k]);
 }
 
-function drawTrendChart(rows){
-  const svg = document.getElementById('trend-chart');
+const CHART_DARK_OPTS = {
+  layout: { textColor: '#8a8f88', background: { type: 'solid', color: '#111412' } },
+  grid: { vertLines: { color: '#232823' }, horzLines: { color: '#232823' } },
+  crosshair: { vertLine: { color: '#e9e6de', width: 1 }, horzLine: { color: '#e9e6de', width: 1 } },
+  timeScale: { borderColor: '#232823' },
+  rightPriceScale: { borderColor: '#232823' },
+  attributionLogo: true,
+};
+
+let barsChart = null, barsLongSeries = null, barsShortSeries = null;
+let trendChart = null, trendCommSeries = null, trendLargeSeries = null, trendSmallSeries = null;
+
+function renderBarsChart(rows){
+  const container = document.getElementById('bars-chart');
+  if(!barsChart){
+    barsChart = LightweightCharts.createChart(container, { ...CHART_DARK_OPTS, height: 220 });
+    barsLongSeries = barsChart.addSeries(LightweightCharts.HistogramSeries, { color: '#5B8DEF', priceLineVisible: false });
+    barsShortSeries = barsChart.addSeries(LightweightCharts.HistogramSeries, { color: '#E8A33D', priceLineVisible: false });
+  }
+  barsLongSeries.setData(rows.map(r => ({ time: r.date, value: r.long, color: '#5B8DEF' })));
+  barsShortSeries.setData(rows.map(r => ({ time: r.date, value: -r.short, color: '#E8A33D' })));
+  barsChart.timeScale().fitContent();
+}
+
+function renderTrendChart(rows){
+  const container = document.getElementById('trend-chart');
   const statusEl = document.getElementById('trend-status');
   if(!rows || rows.length < 2){
     statusEl.textContent = 'Not enough history to draw a trend line yet.';
     statusEl.style.display = 'block';
-    svg.style.display = 'none';
+    container.style.display = 'none';
     return;
   }
   statusEl.style.display = 'none';
-  svg.style.display = 'block';
+  container.style.display = 'block';
 
-  const W = 700, H = 220, padL = 55, padR = 15, padT = 15, padB = 30;
-  const n = rows.length;
-  const allVals = rows.flatMap(r => [r.commNet, r.largeSpecNet, r.smallSpecNet]);
-  const minV = Math.min(...allVals), maxV = Math.max(...allVals);
-  const range = (maxV - minV) || 1;
-
-  const x = i => padL + (i/(n-1)) * (W-padL-padR);
-  const y = v => padT + (1 - (v-minV)/range) * (H-padT-padB);
-  const pathFor = key => rows.map((r,i) => `${i===0?'M':'L'} ${x(i).toFixed(1)} ${y(r[key]).toFixed(1)}`).join(' ');
-  const fmt = v => (v>=0?'+':'') + Math.round(v).toLocaleString();
-
-  let svgContent = '';
-
-  // zero line + a couple of reference gridlines
-  [minV, 0, maxV].forEach(v => {
-    if(v < minV || v > maxV) return;
-    svgContent += `<line x1="${padL}" y1="${y(v)}" x2="${W-padR}" y2="${y(v)}" stroke="#232823" stroke-width="1" stroke-dasharray="${v===0?'0':'3,3'}"/>`;
-    svgContent += `<text x="${padL-6}" y="${y(v)+3}" font-size="8" fill="#8a8f88" text-anchor="end" font-family="IBM Plex Mono, monospace">${fmt(v)}</text>`;
-  });
-
-  // x-axis date labels — sparse, evenly spaced, avoid crowding
-  const labelEvery = Math.max(1, Math.ceil(n/8));
-  rows.forEach((r,i) => {
-    if(i % labelEvery === 0 || i === n-1){
-      svgContent += `<text x="${x(i)}" y="${H-padB+14}" font-size="7.5" fill="#8a8f88" text-anchor="middle" font-family="IBM Plex Mono, monospace">${r.date.slice(2,7)}</text>`;
-    }
-  });
-
-  svgContent += `<path d="${pathFor('commNet')}" fill="none" stroke="#a992e0" stroke-width="1.8"/>`;
-  svgContent += `<path d="${pathFor('largeSpecNet')}" fill="none" stroke="#ffb020" stroke-width="1.8"/>`;
-  svgContent += `<path d="${pathFor('smallSpecNet')}" fill="none" stroke="#7fa8a3" stroke-width="1.8"/>`;
-
-  rows.forEach((r,i) => {
-    svgContent += `<circle cx="${x(i)}" cy="${y(r.commNet)}" r="1.8" fill="#a992e0"><title>Commercials ${r.date}: ${fmt(r.commNet)}</title></circle>`;
-    svgContent += `<circle cx="${x(i)}" cy="${y(r.largeSpecNet)}" r="1.8" fill="#ffb020"><title>Large Spec ${r.date}: ${fmt(r.largeSpecNet)}</title></circle>`;
-    svgContent += `<circle cx="${x(i)}" cy="${y(r.smallSpecNet)}" r="1.8" fill="#7fa8a3"><title>Small Spec ${r.date}: ${fmt(r.smallSpecNet)}</title></circle>`;
-  });
-
-  svg.innerHTML = svgContent;
+  if(!trendChart){
+    trendChart = LightweightCharts.createChart(container, { ...CHART_DARK_OPTS, height: 260 });
+    trendCommSeries = trendChart.addSeries(LightweightCharts.LineSeries, { color: '#a992e0', lineWidth: 2, priceScaleId: 'left', title: 'Commercials' });
+    trendLargeSeries = trendChart.addSeries(LightweightCharts.LineSeries, { color: '#ffb020', lineWidth: 2, priceScaleId: 'left', title: 'Large Spec' });
+    trendSmallSeries = trendChart.addSeries(LightweightCharts.LineSeries, { color: '#00D9FF', lineWidth: 2, priceScaleId: 'right', title: 'Small Spec' });
+    trendChart.priceScale('left').applyOptions({ visible: true, borderColor: '#232823' });
+    trendChart.priceScale('right').applyOptions({ visible: true, borderColor: '#232823' });
+  }
+  trendCommSeries.setData(rows.map(r => ({ time: r.date, value: r.commNet })));
+  trendLargeSeries.setData(rows.map(r => ({ time: r.date, value: r.largeSpecNet })));
+  trendSmallSeries.setData(rows.map(r => ({ time: r.date, value: r.smallSpecNet })));
+  trendChart.timeScale().fitContent();
 }
 
 async function loadCOTTrend(opts){
   const statusEl = document.getElementById('trend-status');
-  const svg = document.getElementById('trend-chart');
+  const container = document.getElementById('trend-chart');
   statusEl.style.display = 'block';
   statusEl.textContent = 'Loading trend history…';
-  svg.style.display = 'none';
+  container.style.display = 'none';
   try{
     trendRawData = await fetchCOTTrendHistory(opts);
     renderCurrentTrendView();
@@ -964,7 +1002,7 @@ async function loadCOTTrend(opts){
 function renderCurrentTrendView(){
   if(!trendRawData) return;
   const rows = trendPeriod === 'monthly' ? resampleMonthly(trendRawData) : trendRawData;
-  drawTrendChart(rows);
+  renderTrendChart(rows);
 }
 
 function setTrendPeriod(period){
@@ -983,6 +1021,7 @@ marketSelect.addEventListener('change', () => {
 loadCOT(optsFromSelect(marketSelect));
 loadCOTTrend(optsFromSelect(marketSelect));
 </script>
+
 <style>
 
   #confluence-sidebar{
@@ -1009,27 +1048,32 @@ loadCOTTrend(optsFromSelect(marketSelect));
 </style>
 <div id="sidebar-overlay" onclick="document.getElementById('confluence-sidebar').classList.remove('open'); this.classList.remove('open');"></div>
 <div id="confluence-sidebar">
-<button class="close-btn" onclick="document.getElementById('confluence-sidebar').classList.remove('open'); document.getElementById('sidebar-overlay').classList.remove('open');">✕</button>
-<h2>COT vs. ETF-Flow Confluence</h2>
-<div style="font-size:10.5px; color:#8a8f88; margin-bottom:8px;">Reference guide</div>
-<p>COT Managed Money is fast, leveraged futures positioning. ETF flow (a price/volume proxy here) reflects slower, more strategic demand. Comparing them tells you which type of buyer is actually driving a move.</p>
-<h3>The Four Combinations</h3>
-<table>
-<tr><th>COT</th><th>ETF Flow</th><th>Read</th></tr>
-<tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-up">↑</span></td><td><span class="read-bull">Strongest confluence</span> — broad-based demand.</td></tr>
-<tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-flat">=</span>/<span class="arrow-down">↓</span></td><td><span class="read-mixed">Fragile rally</span> — speculative only, reverses hard.</td></tr>
-<tr><td><span class="arrow-down">↓</span></td><td><span class="arrow-up">↑</span></td><td><span class="read-bull">Quiet accumulation</span> — stealth-strength signal.</td></tr>
-<tr><td><span class="arrow-down">↓</span></td><td><span class="arrow-down">↓</span></td><td><span class="read-bear">Broad distribution</span> — weakest environment.</td></tr>
-</table>
-<h3>Real Yields &amp; Breakevens</h3>
-<p>Real yield = nominal yield − breakeven. Gold's opportunity cost is set by the real yield, not the nominal one.</p>
-<table>
-<tr><th>Nominal</th><th>Breakeven</th><th>Read</th></tr>
-<tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-flat">=</span></td><td>Real yield rising (tightening) — <span class="read-bear">bearish gold</span>.</td></tr>
-<tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-up">↑↑</span></td><td>Real yield may still fall — <span class="read-mixed">neutral-to-bullish</span>, possible debasement hedge.</td></tr>
-<tr><td><span class="arrow-down">↓</span></td><td><span class="arrow-flat">=</span></td><td>Real yield falling (growth scare) — <span class="read-bull">bullish</span>.</td></tr>
-</table>
-<p style="font-size:11px; color:#8a8f88; margin-top:16px;">Gold stayed elevated through much of 2026 even with real yields relatively high — a partial decoupling from the textbook relationship, usually signaling something structural (central bank reserve buying) overriding the mechanics.</p>
+  <button class="close-btn" onclick="document.getElementById('confluence-sidebar').classList.remove('open'); document.getElementById('sidebar-overlay').classList.remove('open');">✕</button>
+  <h2>COT vs. ETF-Flow Confluence</h2>
+  <div style="font-size:10.5px; color:#8a8f88; margin-bottom:8px;">Reference guide</div>
+
+  <p>COT Managed Money is fast, leveraged futures positioning. ETF flow (a price/volume proxy here) reflects slower, more strategic demand. Comparing them tells you which type of buyer is actually driving a move.</p>
+
+  <h3>The Four Combinations</h3>
+  <table>
+    <tr><th>COT</th><th>ETF Flow</th><th>Read</th></tr>
+    <tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-up">↑</span></td><td><span class="read-bull">Strongest confluence</span> — broad-based demand.</td></tr>
+    <tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-flat">=</span>/<span class="arrow-down">↓</span></td><td><span class="read-mixed">Fragile rally</span> — speculative only, reverses hard.</td></tr>
+    <tr><td><span class="arrow-down">↓</span></td><td><span class="arrow-up">↑</span></td><td><span class="read-bull">Quiet accumulation</span> — stealth-strength signal.</td></tr>
+    <tr><td><span class="arrow-down">↓</span></td><td><span class="arrow-down">↓</span></td><td><span class="read-bear">Broad distribution</span> — weakest environment.</td></tr>
+  </table>
+
+  <h3>Real Yields &amp; Breakevens</h3>
+  <p>Real yield = nominal yield − breakeven. Gold's opportunity cost is set by the real yield, not the nominal one.</p>
+  <table>
+    <tr><th>Nominal</th><th>Breakeven</th><th>Read</th></tr>
+    <tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-flat">=</span></td><td>Real yield rising (tightening) — <span class="read-bear">bearish gold</span>.</td></tr>
+    <tr><td><span class="arrow-up">↑</span></td><td><span class="arrow-up">↑↑</span></td><td>Real yield may still fall — <span class="read-mixed">neutral-to-bullish</span>, possible debasement hedge.</td></tr>
+    <tr><td><span class="arrow-down">↓</span></td><td><span class="arrow-flat">=</span></td><td>Real yield falling (growth scare) — <span class="read-bull">bullish</span>.</td></tr>
+  </table>
+
+  <p style="font-size:11px; color:#8a8f88; margin-top:16px;">Gold stayed elevated through much of 2026 even with real yields relatively high — a partial decoupling from the textbook relationship, usually signaling something structural (central bank reserve buying) overriding the mechanics.</p>
 </div>
+
 </body>
 </html>
