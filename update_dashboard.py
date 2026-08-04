@@ -129,6 +129,45 @@ def compute_volume_delta_zone(price_data):
     }
 
 
+def compute_auction_control(price_data, cvd_data):
+    """Real Auction Market Theory read, computed deterministically — not left
+    to the AI to assert. Compares current price to the volume-accumulation
+    zone (a rough Point-of-Control proxy) and confirms with CVD direction:
+    - Price above the zone + accumulating volume -> buyers in control, price being ACCEPTED higher
+    - Price above the zone + distributing volume -> buyers pushed it up but losing control -> contested
+    - Price below the zone + distributing volume -> sellers in control, price REJECTED lower
+    - Price below the zone + accumulating volume -> sellers pushed it down but losing control -> contested
+    - Price near the zone -> balance, no clear control yet (auction still in progress)
+    """
+    if not price_data or not cvd_data or cvd_data.get('heaviest_volume_price') is None:
+        return None
+
+    price = price_data['price']
+    zone = cvd_data['heaviest_volume_price']
+    cvd_positive = cvd_data['cvd_value'] > 0
+    pct_from_zone = ((price - zone) / zone) * 100 if zone else 0
+
+    NEAR_ZONE_THRESHOLD = 0.15  # % distance from zone still counted as "balance"
+
+    if abs(pct_from_zone) < NEAR_ZONE_THRESHOLD:
+        control = "balance"
+        summary = f"Price is trading right at the volume zone ({zone:.2f}) — no clear control yet, auction still in progress."
+    elif price > zone and cvd_positive:
+        control = "buyers_in_control"
+        summary = f"Price holds above the volume zone ({zone:.2f}) with confirming buy-volume — buyers in control, higher prices being accepted."
+    elif price > zone and not cvd_positive:
+        control = "buyers_contested"
+        summary = f"Price sits above the volume zone ({zone:.2f}) but volume is net distributing — buyers pushed price up but aren't clearly in control; contested."
+    elif price < zone and not cvd_positive:
+        control = "sellers_in_control"
+        summary = f"Price holds below the volume zone ({zone:.2f}) with confirming sell-volume — sellers in control, lower prices being accepted."
+    else:
+        control = "sellers_contested"
+        summary = f"Price sits below the volume zone ({zone:.2f}) but volume is net accumulating — sellers pushed price down but aren't clearly in control; contested."
+
+    return {'control': control, 'summary': summary, 'zone': zone, 'pct_from_zone': pct_from_zone}
+
+
 GEMINI_LIST_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 GEMINI_GENERATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -537,19 +576,21 @@ def check_levels_touched(levels, intraday_extremes):
     }
 
 
-def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines, session, soup):
-    """AI-written session note. Structure (in order): the fact that happened,
-    a level's role-change (support<->resistance), volume/accumulation
-    confirmation, an honest SMT divergence flag, risk-regime context, and a
-    specific invalidation condition. Every price level and touched/untouched
-    status is computed in Python from real data and handed to the AI —
-    never invented."""
+def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines, session, soup,
+                                   dxy_data=None, vix_data=None, real_yield=None):
+    """AI-written session note, framed as a chief macro strategist's briefing.
+    Every fact referenced (price levels, touched/untouched status, DXY, VIX,
+    real yields, COT) is computed in Python from real data and handed to the
+    AI — never invented. The model's job is synthesis and explanation (the
+    'why'), not sourcing facts on its own."""
     if not (gold_price and silver_price):
         return ("Live price data unavailable this run — intraday liquidity map "
                 "could not be generated. Check next scheduled update.")
 
     gold_cvd = compute_volume_delta_zone(gold_price)
     silver_cvd = compute_volume_delta_zone(silver_price)
+    gold_control = compute_auction_control(gold_price, gold_cvd)
+    silver_control = compute_auction_control(silver_price, silver_cvd)
 
     gold_levels = get_or_set_daily_levels(soup, "gold", gold_price, gold_cvd, session)
     silver_levels = get_or_set_daily_levels(soup, "silver", silver_price, silver_cvd, session)
@@ -575,42 +616,66 @@ def generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
         smt_line = (f"Gold's Managed Money net position {g_dir} week-over-week; silver's {s_dir}. "
                     f"Positioning {'confirms' if agree else 'is diverging'} across the two metals.")
 
+    dxy_line = f"DXY: {dxy_data['price']:.2f} ({dxy_data['pct_change']:+.2f}%)" if dxy_data else "DXY: not available"
+    vix_line = f"VIX: {vix_data['price']:.2f} ({vix_data['pct_change']:+.2f}%)" if vix_data else "VIX: not available"
+    ry_line = (f"10Y real yield: {real_yield['value']:.2f}% ({real_yield['delta']:+.2f} vs prior reading)"
+               if real_yield else "Real yield: not available")
+
     system_prompt = (
-        "You write a session trading note (Asia/London/New York open) for a personal "
-        "trading dashboard. Follow this exact structure, in order:\n"
-        "1. Lead with the single most important FACT from DATA (a level touched, or "
-        "still holding) — no throat-clearing.\n"
-        "2. If a level was touched, state its role change (resistance that's now support, "
-        "or vice versa). If untouched, say what that implies about where price is coiling.\n"
-        "3. Reference the volume/accumulation zone from DATA — confirm or question whether "
-        "it's actually holding.\n"
-        "4. State the SMT (gold vs silver positioning) read honestly — if it's diverging, "
-        "say so plainly, don't force false confluence.\n"
-        "5. One sentence of risk-regime context — supporting, not leading.\n"
+        "You are the chief macro strategist for a professional trading desk, writing the "
+        "session briefing (Asia/London/New York open) for a personal trading dashboard. "
+        "Your objective is NOT to predict markets — it is to explain the current state of "
+        "the market with evidence, the way a Goldman Sachs, Citadel, or JPMorgan macro desk "
+        "note would. Think in terms of price structure, positioning, cross-asset context, "
+        "and liquidity/auction logic — never a bare conclusion without the reasoning behind it. "
+        "Bad: 'Gold is bullish because buyers are strong.' Good: 'Gold remains constructive "
+        "despite profit-taking because buyers continue defending higher lows while positioning "
+        "confirms.' Every claim must trace to something in DATA below — dollar strength, real "
+        "yields, COT positioning, volume, or the specific price levels given.\n\n"
+        "Structure, in order:\n"
+        "1. Lead with the single most important FACT from DATA (a level touched, or still "
+        "holding) — no throat-clearing.\n"
+        "2. If a level was touched, state its role change (resistance that's now support, or "
+        "vice versa) and explain WHY using cross-asset context (DXY/real yields) if it's in DATA "
+        "— not just that it happened.\n"
+        "3. State explicitly WHO is in control right now — buyers or sellers — using the "
+        "AUCTION CONTROL line in DATA below. Don't just describe volume; say plainly whether "
+        "the current price is being accepted (control confirmed) or contested (control unclear), "
+        "and what that means for the next move.\n"
+        "4. State the SMT (gold vs silver positioning) read honestly — if diverging, say so "
+        "plainly, don't force false confluence.\n"
+        "5. One sentence tying it to the cross-asset backdrop (DXY, VIX, real yields) — "
+        "supporting context, not the headline.\n"
         "6. End with ONE specific invalidation condition — a level AND a real condition "
-        "(e.g. 'a close back below X, not just a wick').\n"
-        "HARD RULE: only reference price levels and touched/untouched status exactly as "
-        "given in DATA — never invent one. Refer to price levels neutrally as 'key level' "
-        "or 'the level' — do NOT call something 'today's high/low' or 'this session's move' "
-        "unless DATA explicitly confirms it was set in the current session; the level may "
-        "be older. Never attribute a level or move to a specific event or catalyst (e.g. "
-        "'the FOMC drove this') unless that exact causal claim is present in DATA — if no "
-        "cause is given, describe the price action itself, not a guessed reason for it. "
-        "Confident, terse, sell-side tone. No hedge words, no disclaimers, no markdown. "
-        "4-6 sentences total."
+        "(e.g. 'a close back below X, not just a wick').\n\n"
+        "HARD RULES: only reference price levels, touched/untouched status, and cross-asset "
+        "numbers exactly as given in DATA — never invent one, and never reference a category "
+        "(economic calendar, correlation, relative strength) that has no data given below. Refer "
+        "to price levels neutrally as 'key level' or 'the level' — do NOT call something "
+        "'today's high/low' unless DATA confirms it was set this session. Never attribute a "
+        "move to a specific event (e.g. 'the FOMC drove this') unless that causal claim is "
+        "explicitly in DATA. Confident, terse, sell-side tone. No hedge words, no disclaimers, "
+        "no markdown. Concise enough for a dashboard — 5-7 sentences total."
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
+    gold_control_line = f"GOLD AUCTION CONTROL: {gold_control['summary']}" if gold_control else "GOLD AUCTION CONTROL: not available"
+    silver_control_line = f"SILVER AUCTION CONTROL: {silver_control['summary']}" if silver_control else "SILVER AUCTION CONTROL: not available"
     user_prompt = (
         f"SESSION: {session}\n"
         f"GOLD: price {gold_price['price']:.2f}\n"
         f"  {fmt_touch('Resistance', gold_levels.get('resistance'), gold_touched['resistance_touched'])}\n"
         f"  {fmt_touch('Support', gold_levels.get('support'), gold_touched['support_touched'])}\n"
         f"  Volume-accumulation zone: {gold_levels.get('volume_zone')}\n"
+        f"  {gold_control_line}\n"
         f"SILVER: price {silver_price['price']:.2f}\n"
         f"  {fmt_touch('Resistance', silver_levels.get('resistance'), silver_touched['resistance_touched'])}\n"
         f"  {fmt_touch('Support', silver_levels.get('support'), silver_touched['support_touched'])}\n"
         f"  Volume-accumulation zone: {silver_levels.get('volume_zone')}\n"
+        f"  {silver_control_line}\n"
         f"{smt_line}\n"
+        f"{dxy_line}\n"
+        f"{vix_line}\n"
+        f"{ry_line}\n"
         f"Today's headlines: {headline_sample}"
     )
 
@@ -1174,16 +1239,23 @@ def generate_updated_dashboard():
     gold_cot = fetch_cot_managed_money("GOLD - COMMODITY EXCHANGE")
     silver_cot = fetch_cot_managed_money("SILVER - COMMODITY EXCHANGE")
 
+    # cross-asset context, fetched early so the liquidity/strategist briefing can
+    # actually reference real dollar/yield/vol data instead of omitting it
+    vix_data = fetch_yahoo_chart("^VIX")
+    dxy_data = fetch_yahoo_chart("DX-Y.NYB")
+    fred_key = os.environ.get("FRED_API_KEY")
+    real_yield = fetch_fred_series("DFII10", fred_key)
+    breakeven = fetch_fred_series("T10YIE", fred_key)
+
     bias_rows = compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot)
     update_bias_cards(soup, bias_rows)
 
-    liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot, headlines, session, soup)
+    liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
+                                                          headlines, session, soup, dxy_data, vix_data, real_yield)
     update_desk_note(soup, geo_summary, liquidity_paragraph, session)
     time.sleep(3)  # spread AI call bursts across phases, not just within the bias-card loop
 
     # --- Risk Gauge: numbers computed every run, AI text only on material change ---
-    vix_data = fetch_yahoo_chart("^VIX")
-    dxy_data = fetch_yahoo_chart("DX-Y.NYB")
     credit_spread = fetch_fred_credit_spread()
     risk_regime = compute_risk_regime(vix_data, dxy_data, gold_price, credit_spread)
 
@@ -1215,9 +1287,7 @@ def generate_updated_dashboard():
     time.sleep(3)
 
     # --- Real Yields & Rate Transmission (monthly narrative, materiality-gated) ---
-    fred_key = os.environ.get("FRED_API_KEY")
-    real_yield = fetch_fred_series("DFII10", fred_key)
-    breakeven = fetch_fred_series("T10YIE", fred_key)
+    # (real_yield already fetched earlier, reused here — breakeven only needed for this section)
     ry_scenario = classify_real_yield_regime(real_yield, breakeven)
     update_real_yield_section(soup, real_yield, breakeven, ry_scenario, headlines)
     time.sleep(3)
