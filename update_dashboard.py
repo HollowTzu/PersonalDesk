@@ -380,35 +380,76 @@ def fallback_driver_text(asset_name, pct, cot_data):
     return " ".join(parts)
 
 
-def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines):
-    """Calls GitHub Models to write the driver + invalidation sentences,
-    grounded strictly in the real data passed in. Falls back to plain
-    computed text (never fabricated headlines) if the call fails or
-    returns something we can't parse."""
-    cot_line = ""
-    if cot_data:
-        direction = "increased" if cot_data['delta'] > 0 else "decreased" if cot_data['delta'] < 0 else "was flat"
-        cot_line = (f"Managed Money net {direction} by {abs(cot_data['delta']):,} contracts w/w "
-                    f"as of {cot_data['report_date']} (current net {cot_data['net']:+,}).")
+def fetch_crypto_fear_greed():
+    """Alternative.me Crypto Fear & Greed Index — free, no key, CORS-enabled.
+    Their terms require visible attribution wherever this data is shown;
+    handled by always appending a fixed attribution line, not left to the
+    AI to remember to cite."""
+    try:
+        d = fetch_json("https://api.alternative.me/fng/?limit=2")
+        entries = d.get("data", [])
+        if len(entries) < 1:
+            return None
+        latest = entries[0]
+        prior = entries[1] if len(entries) > 1 else None
+        result = {"value": int(latest["value"]), "label": latest["value_classification"]}
+        if prior:
+            result["delta"] = int(latest["value"]) - int(prior["value"])
+        return result
+    except Exception as e:
+        print(f"Fear & Greed fetch failed: {e}")
+        return None
+
+
+def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, auction_control=None, fear_greed=None):
+    """Calls the AI to write the driver + invalidation, grounded strictly in
+    real data. For gold/silver, deliberately does NOT restate the Managed
+    Money COT number — that's already shown in the SMT panel elsewhere on
+    the dashboard; repeating it here would waste a sentence saying nothing
+    new. Auction control (who's in control, buyer or seller) is computed
+    deterministically in Python and handed to the AI as a fact to explain,
+    not a judgment call it makes itself."""
+    control_line = ""
+    if auction_control:
+        control_line = f"AUCTION CONTROL: {auction_control['summary']}"
+
+    fg_line = ""
+    if fear_greed:
+        delta_txt = f", {fear_greed['delta']:+d} vs prior reading" if "delta" in fear_greed else ""
+        fg_line = f"Crypto Fear & Greed Index: {fear_greed['value']}/100 ({fear_greed['label']}{delta_txt})"
 
     system_prompt = (
-        "You write one-line institutional desk notes for a personal trading dashboard. "
-        "Use only the DATA given — never invent a specific news event, price level, or "
-        "cause that isn't in the DATA. If the headlines aren't clearly relevant to this "
-        "asset, describe the move in terms of price action/positioning instead of forcing "
-        "a news connection. Confident, terse, sell-side tone — no hedge words like 'might' "
-        "or 'could', no disclaimers. Output ONLY valid JSON, no markdown fences: "
-        '{"driver": "one sentence", "invalidation": "one sentence"}'
+        "You write a 2-3 sentence institutional desk note for one asset on a personal "
+        "trading dashboard. Use ONLY the DATA given — never invent a specific news event, "
+        "price level, or cause not present in DATA. Structure:\n"
+        "1. State who is in control right now — buyers or sellers — using the AUCTION "
+        "CONTROL line, and explain briefly why (the volume/price relationship), not just "
+        "assert it.\n"
+        "2. Connect that to the day's price action and, if genuinely relevant, the headlines "
+        "or sentiment data given — don't force a connection that isn't there.\n"
+        "3. Separately, give ONE specific invalidation condition tied to a real level.\n"
+        "Do not restate a raw COT contract number if given — that's shown elsewhere on this "
+        "dashboard already; only reference positioning if it materially agrees or disagrees "
+        "with the price/auction read. Confident, terse, sell-side tone. No hedge words, no "
+        "disclaimers. Output ONLY valid JSON, no markdown fences: "
+        '{"driver": "2 sentences", "invalidation": "one sentence"}'
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
+    cot_context = ""
+    if cot_data:
+        cot_context = (f"(Context only, do not restate the number: COT positioning "
+                        f"{'increased' if cot_data['delta']>0 else 'decreased'} w/w, "
+                        f"{'confirms' if (cot_data['delta']>0)==(pct>0) else 'diverges from'} price direction.)")
     user_prompt = (
         f"Asset: {asset_name}\n"
         f"Price change vs prior close: {pct:+.2f}%\n"
-        f"{cot_line}\n"
+        f"{control_line}\n"
+        f"{fg_line}\n"
+        f"{cot_context}\n"
         f"Today's macro headlines: {headline_sample}"
     )
 
-    raw = call_ai_model(system_prompt, user_prompt, max_tokens=150)
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=220)
     if raw:
         try:
             cleaned = raw.strip().strip("`")
@@ -416,7 +457,10 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines):
                 cleaned = cleaned[4:].strip()
             parsed = json.loads(cleaned)
             if "driver" in parsed and "invalidation" in parsed:
-                return parsed["driver"], parsed["invalidation"]
+                driver_text = parsed["driver"]
+                if fear_greed:
+                    driver_text += " (Fear & Greed Index: alternative.me)"
+                return driver_text, parsed["invalidation"]
         except Exception as e:
             print(f"Could not parse AI response for {asset_name}, using fallback: {e}")
 
@@ -432,8 +476,12 @@ def build_bias_row(asset_name, price_data, cot_data=None, headlines=None):
     bias, badge_class = classify(pct, cot_delta)
     qualifier = compute_qualifier(bias, pct)
 
+    cvd = compute_volume_delta_zone(price_data)
+    auction_control = compute_auction_control(price_data, cvd)
+    fear_greed = fetch_crypto_fear_greed() if "BTC" in asset_name.upper() else None
+
     driver, invalidation = generate_ai_driver_and_invalidation(
-        asset_name, pct, cot_data, headlines or []
+        asset_name, pct, cot_data, headlines or [], auction_control, fear_greed
     )
 
     return {
@@ -452,7 +500,7 @@ def compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_
         "S&P 500 (ES)": (fetch_yahoo_chart("^GSPC"), None),
         "GOLD (XAUUSD)": (gold_price, gold_cot),
         "SILVER (XAGUSD)": (silver_price, silver_cot),
-        "BTCUSD (BITCOIN)": (fetch_coingecko_btc(), None),
+        "BTCUSD (BITCOIN)": (fetch_yahoo_chart("BTC-USD"), None),
         "CRUDE OIL (WTI)": (fetch_yahoo_chart("CL=F"), None),
     }
 
