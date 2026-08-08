@@ -339,8 +339,19 @@ PRICE_MOVE_THRESHOLD = 0.5   # % move to count as a directional lean
 COT_AGREEMENT_BONUS = True   # for gold/silver, require COT to agree with price for a strong call
 
 
-def classify(pct_change, cot_delta=None):
+def classify(pct_change, cot_delta=None, auction_control=None):
+    """Badge classification — a transparent, deterministic formula, not an
+    AI judgment call. Auction control (real, same-day volume evidence) can
+    now override a COT/price disagreement: COT is a week old by the time
+    it's published, so if today's actual volume confirms the price move,
+    that's more current evidence than a stale positioning snapshot, and the
+    badge should reflect what's happening now, not force NEUTRAL just
+    because a week-old number disagrees."""
     price_lean = 1 if pct_change >= PRICE_MOVE_THRESHOLD else (-1 if pct_change <= -PRICE_MOVE_THRESHOLD else 0)
+
+    control = auction_control['control'] if auction_control else None
+    control_confirms_up = control == 'buyers_in_control'
+    control_confirms_down = control == 'sellers_in_control'
 
     if cot_delta is None:
         if price_lean == 1:
@@ -354,7 +365,14 @@ def classify(pct_change, cot_delta=None):
         return "BULLISH", "badge-bullish"
     if price_lean == -1 and cot_lean <= 0:
         return "BEARISH", "badge-bearish"
-    return "NEUTRAL", "badge-neutral"  # price and positioning disagree — no clean call
+
+    # price and COT disagree — check if real same-day volume settles it
+    if price_lean == 1 and control_confirms_up:
+        return "BULLISH", "badge-bullish"
+    if price_lean == -1 and control_confirms_down:
+        return "BEARISH", "badge-bearish"
+
+    return "NEUTRAL", "badge-neutral"  # still no clean read even with volume evidence
 
 
 def compute_qualifier(bias, pct):
@@ -401,14 +419,21 @@ def fetch_crypto_fear_greed():
         return None
 
 
-def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, auction_control=None, fear_greed=None):
+def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, auction_control=None,
+                                          fear_greed=None, cross_context=None):
     """Calls the AI to write the driver + invalidation, grounded strictly in
     real data. For gold/silver, deliberately does NOT restate the Managed
     Money COT number — that's already shown in the SMT panel elsewhere on
     the dashboard; repeating it here would waste a sentence saying nothing
     new. Auction control (who's in control, buyer or seller) is computed
     deterministically in Python and handed to the AI as a fact to explain,
-    not a judgment call it makes itself."""
+    not a judgment call it makes itself.
+
+    cross_context: dict of asset-specific real data (DXY, VIX, real yield,
+    a correlated partner asset's direction) — this is what gives each of
+    the 6 cards something genuinely distinct to reference instead of all
+    six drawing from the same generic headline pool, which is what was
+    producing near-identical boilerplate endings across cards."""
     control_line = ""
     if auction_control:
         control_line = f"AUCTION CONTROL: {auction_control['summary']}"
@@ -418,6 +443,41 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, au
         delta_txt = f", {fear_greed['delta']:+d} vs prior reading" if "delta" in fear_greed else ""
         fg_line = f"Crypto Fear & Greed Index: {fear_greed['value']}/100 ({fear_greed['label']}{delta_txt})"
 
+    cross_block = cross_context if cross_context else ""
+
+    # divergence check — must match classify()'s actual logic, including the
+    # auction-control override, or this note goes stale the moment classify()
+    # changes and starts contradicting the badge again
+    divergence_instruction = ""
+    divergence_line = ""
+    if cot_data:
+        price_lean = 1 if pct >= PRICE_MOVE_THRESHOLD else (-1 if pct <= -PRICE_MOVE_THRESHOLD else 0)
+        cot_lean = 1 if cot_data['delta'] > 0 else (-1 if cot_data['delta'] < 0 else 0)
+        raw_disagreement = (price_lean != 0 and cot_lean != 0 and
+                             ((price_lean == 1 and cot_lean < 0) or (price_lean == -1 and cot_lean > 0)))
+        control = auction_control['control'] if auction_control else None
+        resolved_by_volume = ((price_lean == 1 and control == 'buyers_in_control') or
+                               (price_lean == -1 and control == 'sellers_in_control'))
+        if raw_disagreement and resolved_by_volume:
+            price_word = "bullish" if price_lean == 1 else "bearish"
+            divergence_line = (f"NOTE: last week's COT positioning moved against price, but today's real "
+                                f"volume/auction evidence confirms the {price_word} move — that's why the "
+                                f"badge sides with today's volume over the older COT print.")
+            divergence_instruction = (
+                " IMPORTANT: DATA shows COT disagreeing with price, but real-time volume evidence resolves "
+                "it — explain that the badge is trusting today's actual auction evidence over a week-old "
+                "positioning snapshot, don't just ignore the conflict."
+            )
+        elif raw_disagreement:
+            price_word = "bullish" if price_lean == 1 else "bearish"
+            divergence_line = (f"NOTE: price action alone looks {price_word}, but real COT positioning moved "
+                               f"the opposite way this week and volume doesn't clearly resolve it — THIS is "
+                               f"why the badge is NEUTRAL, not a price call.")
+            divergence_instruction = (
+                " IMPORTANT: DATA shows a genuine divergence forcing this card's badge to NEUTRAL despite "
+                "the price move — make that the EXPLICIT lead point of sentence 1, not a buried footnote."
+            )
+
     system_prompt = (
         "You write a 2-3 sentence institutional desk note for one asset on a personal "
         "trading dashboard. Use ONLY the DATA given — never invent a specific news event, "
@@ -425,13 +485,20 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, au
         "1. State who is in control right now — buyers or sellers — using the AUCTION "
         "CONTROL line, and explain briefly why (the volume/price relationship), not just "
         "assert it.\n"
-        "2. Connect that to the day's price action and, if genuinely relevant, the headlines "
-        "or sentiment data given — don't force a connection that isn't there.\n"
+        "2. Connect that to the day's price action AND, if given, the cross-asset data below "
+        "(DXY, VIX, real yields, or the correlated partner asset) — this is the specific "
+        "reasoning that makes this card different from the other 5 on the dashboard, so use "
+        "it if it's there.\n"
         "3. Separately, give ONE specific invalidation condition tied to a real level.\n"
         "Do not restate a raw COT contract number if given — that's shown elsewhere on this "
         "dashboard already; only reference positioning if it materially agrees or disagrees "
-        "with the price/auction read. Confident, terse, sell-side tone. No hedge words, no "
-        "disclaimers. Output ONLY valid JSON, no markdown fences: "
+        "with the price/auction read. HARD RULE AGAINST FILLER: if there is genuinely no "
+        "specific data point to explain the move beyond price/volume, say so plainly ('no "
+        "clear macro catalyst behind this move — reads as internal price action') rather than "
+        "writing a vague, generic-sounding sentence about 'ignoring broader macro' or similar "
+        "phrasing that could apply to any asset unchanged — that kind of filler is worse than "
+        "admitting there's no specific catalyst. Confident, terse, sell-side tone. No hedge "
+        "words, no disclaimers." + divergence_instruction + " Output ONLY valid JSON, no markdown fences: "
         '{"driver": "2 sentences", "invalidation": "one sentence"}'
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:4]) or "none available this run"
@@ -445,7 +512,9 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, au
         f"Price change vs prior close: {pct:+.2f}%\n"
         f"{control_line}\n"
         f"{fg_line}\n"
+        f"{cross_block}\n"
         f"{cot_context}\n"
+        f"{divergence_line}\n"
         f"Today's macro headlines: {headline_sample}"
     )
 
@@ -467,21 +536,23 @@ def generate_ai_driver_and_invalidation(asset_name, pct, cot_data, headlines, au
     return fallback_driver_text(asset_name, pct, cot_data), "Decisive break of the recent trading range."
 
 
-def build_bias_row(asset_name, price_data, cot_data=None, headlines=None):
+def build_bias_row(asset_name, price_data, cot_data=None, headlines=None, cross_context=None):
     if price_data is None:
         return None  # don't fabricate a row for data we couldn't fetch
 
     pct = price_data['pct_change']
     cot_delta = cot_data['delta'] if cot_data else None
-    bias, badge_class = classify(pct, cot_delta)
-    qualifier = compute_qualifier(bias, pct)
 
     cvd = compute_volume_delta_zone(price_data)
     auction_control = compute_auction_control(price_data, cvd)
+
+    bias, badge_class = classify(pct, cot_delta, auction_control)  # bug fix: auction_control now actually reaches classify()
+    qualifier = compute_qualifier(bias, pct)
+
     fear_greed = fetch_crypto_fear_greed() if "BTC" in asset_name.upper() else None
 
     driver, invalidation = generate_ai_driver_and_invalidation(
-        asset_name, pct, cot_data, headlines or [], auction_control, fear_greed
+        asset_name, pct, cot_data, headlines or [], auction_control, fear_greed, cross_context
     )
 
     return {
@@ -494,23 +565,67 @@ def build_bias_row(asset_name, price_data, cot_data=None, headlines=None):
     }
 
 
-def compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot):
+def build_cross_context(asset_key, all_pct, dxy_data, vix_data, real_yield):
+    """Genuinely asset-specific cross-context — the actual fix for the
+    repetition problem. Each asset gets the real data that would actually
+    matter to a macro desk covering it, not the same generic pool everyone
+    else gets."""
+    lines = []
+
+    def dxy_line():
+        if dxy_data:
+            lines.append(f"DXY: {dxy_data['price']:.2f} ({dxy_data['pct_change']:+.2f}%)")
+
+    def vix_line():
+        if vix_data:
+            lines.append(f"VIX: {vix_data['price']:.2f} ({vix_data['pct_change']:+.2f}%)")
+
+    def yield_line():
+        if real_yield:
+            lines.append(f"10Y real yield: {real_yield['value']:.2f}% ({real_yield['delta']:+.2f} vs prior)")
+
+    def other_asset_line(other_key, other_label):
+        if other_key in all_pct:
+            lines.append(f"{other_label}: {all_pct[other_key]:+.2f}%")
+
+    if asset_key == "GOLD":
+        dxy_line(); yield_line(); other_asset_line("SILVER", "Silver")
+    elif asset_key == "SILVER":
+        dxy_line(); yield_line(); other_asset_line("GOLD", "Gold")
+    elif asset_key == "NQ":
+        vix_line(); yield_line(); other_asset_line("SPX", "S&P 500")
+    elif asset_key == "SPX":
+        vix_line(); yield_line(); other_asset_line("NQ", "Nasdaq 100")
+    elif asset_key == "CRUDE":
+        dxy_line()
+    elif asset_key == "BTC":
+        dxy_line(); other_asset_line("NQ", "Nasdaq 100 (risk-on correlation)")
+
+    return "\n".join(lines) if lines else None
+
+
+def compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot,
+                            dxy_data=None, vix_data=None, real_yield=None):
     fetches = {
-        "NQ (NASDAQ 100)": (fetch_yahoo_chart("^NDX"), None),
-        "S&P 500 (ES)": (fetch_yahoo_chart("^GSPC"), None),
-        "GOLD (XAUUSD)": (gold_price, gold_cot),
-        "SILVER (XAGUSD)": (silver_price, silver_cot),
-        "BTCUSD (BITCOIN)": (fetch_yahoo_chart("BTC-USD"), None),
-        "CRUDE OIL (WTI)": (fetch_yahoo_chart("CL=F"), None),
+        "NQ": ("NQ (NASDAQ 100)", fetch_yahoo_chart("^NDX"), None),
+        "SPX": ("S&P 500 (ES)", fetch_yahoo_chart("^GSPC"), None),
+        "GOLD": ("GOLD (XAUUSD)", gold_price, gold_cot),
+        "SILVER": ("SILVER (XAGUSD)", silver_price, silver_cot),
+        "BTC": ("BTCUSD (BITCOIN)", fetch_yahoo_chart("BTC-USD"), None),
+        "CRUDE": ("CRUDE OIL (WTI)", fetch_yahoo_chart("CL=F"), None),
     }
 
+    # all % changes gathered first, so any asset can reference any other's move
+    all_pct = {k: v[1]['pct_change'] for k, v in fetches.items() if v[1] is not None}
+
     rows = []
-    for asset, (price_data, cot_data) in fetches.items():
-        row = build_bias_row(asset, price_data, cot_data, headlines)
+    for key, (asset_name, price_data, cot_data) in fetches.items():
+        cross_context = build_cross_context(key, all_pct, dxy_data, vix_data, real_yield)
+        row = build_bias_row(asset_name, price_data, cot_data, headlines, cross_context)
         if row:
             rows.append(row)
         else:
-            print(f"SKIPPED '{asset}' — no live price data available this run, card left unchanged.")
+            print(f"SKIPPED '{asset_name}' — no live price data available this run, card left unchanged.")
         time.sleep(3)  # spread out Gemini calls — avoids bursting the free-tier per-minute limit
     return rows
 
@@ -1295,7 +1410,8 @@ def generate_updated_dashboard():
     real_yield = fetch_fred_series("DFII10", fred_key)
     breakeven = fetch_fred_series("T10YIE", fred_key)
 
-    bias_rows = compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot)
+    bias_rows = compute_all_bias_rows(headlines, gold_price, silver_price, gold_cot, silver_cot,
+                                        dxy_data, vix_data, real_yield)
     update_bias_cards(soup, bias_rows)
 
     liquidity_paragraph = generate_liquidity_paragraph(gold_price, silver_price, gold_cot, silver_cot,
