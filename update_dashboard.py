@@ -301,6 +301,19 @@ def fetch_all_headlines():
     return all_headlines
 
 
+def fetch_repatriation_headlines():
+    """Targeted search for sovereign gold repatriation / custody-shift stories
+    (e.g. central banks pulling gold from the NY Fed) — kept separate from the
+    4 general market RSS feeds because this is a real, recurring but niche
+    narrative that a broad market feed may or may not surface on any given
+    day. Reuses fetch_headlines_from() as-is: Google News search results are
+    valid RSS, so this needs no new parsing logic and fails the same safe way
+    (empty list, printed warning) as every other headline source already does."""
+    query_url = ("https://news.google.com/rss/search?q=gold+repatriation+OR+"
+                 "%22central+bank+gold%22+%22New+York+Fed%22&hl=en-US&gl=US&ceid=US:en")
+    return fetch_headlines_from("Gold Repatriation Search", query_url, max_items=4)
+
+
 def summarize_geopolitical_rate_context(headlines):
     """AI-summarized synthesis across real headlines — replaces the old
     behavior of just using headline[0] verbatim, which was often irrelevant
@@ -1120,19 +1133,27 @@ def generate_geopolitical_narrative(headlines, risk_regime):
     return raw.strip() if raw else None
 
 
-def generate_supply_demand_narrative(gold_cot, silver_cot, headlines):
+def generate_supply_demand_narrative(gold_cot, silver_cot, headlines, repatriation_headlines=None):
     system_prompt = (
         "You write the 'Supply & Demand (Gold & Silver)' section of a Q3 2026 institutional "
         "fundamental analysis panel. Two short items, both framed '▼ USD' (structural demand "
-        "factors), covering central bank reserve buying and physical market supply/demand. "
+        "factors), covering (1) central bank reserve activity — this includes both new buying "
+        "AND sovereign repatriation/custody-shift moves (e.g. a central bank moving gold out of "
+        "the NY Fed to domestic or European vaults). If the data given is a repatriation move, "
+        "describe it accurately as a custody shift, NOT as new demand or new buying — repatriation "
+        "moves existing metal, it does not create new purchases. And (2) physical market supply/demand. "
         "Use ONLY the DATA given — never invent a specific tonnage or deficit figure not listed. "
+        "If neither item has real data provided, say so plainly rather than inventing content. "
         "Output plain HTML: '<b>▼ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
+    repatriation_sample = ("; ".join(f'"{h}"' for h in (repatriation_headlines or [])[:4])
+                            or "no repatriation-specific stories found this run")
     cot_line = ""
     if gold_cot: cot_line += f"Gold COT net: {gold_cot['net']:+,} ({gold_cot['delta']:+,} w/w). "
     if silver_cot: cot_line += f"Silver COT net: {silver_cot['net']:+,} ({silver_cot['delta']:+,} w/w)."
-    user_prompt = f"{cot_line}\nHeadlines: {headline_sample}"
+    user_prompt = (f"{cot_line}\nGeneral headlines: {headline_sample}\n"
+                   f"Central bank gold repatriation/custody headlines: {repatriation_sample}")
     raw = call_ai_model(system_prompt, user_prompt, max_tokens=200)
     return raw.strip() if raw else None
 
@@ -1192,7 +1213,9 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         all_succeeded = False
     time.sleep(3)
 
-    sd = generate_supply_demand_narrative(gold_cot, silver_cot, headlines)
+    repatriation_headlines = fetch_repatriation_headlines()
+    print(f"Gold Repatriation Search: {len(repatriation_headlines)} headlines fetched.")
+    sd = generate_supply_demand_narrative(gold_cot, silver_cot, headlines, repatriation_headlines)
     if sd:
         el = soup.find(id="supply-demand-content")
         if el:
