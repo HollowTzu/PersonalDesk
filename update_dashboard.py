@@ -216,14 +216,14 @@ def discover_gemini_model(api_key):
     return None
 
 
-def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
+def _call_gemini(system_prompt, user_prompt, max_tokens=200, _retry=True):
     """AI generation via Google AI Studio's official Gemini free tier.
     Requires a GEMINI_API_KEY secret — a real key from Google (aistudio.google.com),
     not borrowed from any subscription product. This is the intended, sanctioned
     use case for that key, not a workaround."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("GEMINI_API_KEY not set — skipping AI generation, falling back to plain text.")
+        print("GEMINI_API_KEY not set — skipping Gemini, will try Groq fallback if configured.")
         return None
 
     model = discover_gemini_model(api_key)
@@ -254,18 +254,91 @@ def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
         if e.code == 429 and _retry:
             print("Gemini 429 (rate limited) — backing off 15s and retrying once.")
             time.sleep(15)
-            return call_ai_model(system_prompt, user_prompt, max_tokens, _retry=False)
+            return _call_gemini(system_prompt, user_prompt, max_tokens, _retry=False)
         print(f"Gemini call failed: HTTP {e.code}: {e.reason}")
         return None
     except (TimeoutError, urllib.error.URLError) as e:
         if _retry:
             print(f"Gemini call timed out — retrying once: {e}")
-            return call_ai_model(system_prompt, user_prompt, max_tokens, _retry=False)
+            return _call_gemini(system_prompt, user_prompt, max_tokens, _retry=False)
         print(f"Gemini call failed after retry: {e}")
         return None
     except Exception as e:
         print(f"Gemini call failed: {e}")
         return None
+
+
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Free tier per Groq's own docs (console.groq.com/docs/rate-limits, checked
+# Sep 2026): 30 RPM / 1,000 RPD / 8K TPM / 200K TPD — comfortably covers this
+# workload's ~20 short calls/run. Hardcoded (not discovered like Gemini)
+# because Groq's OpenAI-compatible endpoint doesn't expose an equivalent
+# models-list call; if this model name is ever retired, the HTTP error below
+# will say so and it'll need updating here.
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+
+def call_groq(system_prompt, user_prompt, max_tokens=200):
+    """Fallback AI provider — a separate company on separate infrastructure
+    from Google, so a Gemini outage doesn't take this down too. Only called
+    when Gemini fails for a given section; never the primary path. Requires
+    a GROQ_API_KEY secret (console.groq.com, free tier, no card required)."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return None
+
+    payload = json.dumps({
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.4,
+        "max_tokens": max_tokens,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        GROQ_CHAT_URL,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read())
+        return d["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        print(f"Groq fallback call failed: HTTP {e.code}: {e.reason}")
+        return None
+    except (TimeoutError, urllib.error.URLError) as e:
+        print(f"Groq fallback call failed: {e}")
+        return None
+    except Exception as e:
+        print(f"Groq fallback call failed: {e}")
+        return None
+
+
+def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
+    """Entry point every section calls — unchanged signature, so nothing
+    downstream needs to know a second provider exists. Tries Gemini first
+    (with its own 429/timeout retry, exactly as before). Only if Gemini comes
+    back empty for THIS call does it fall back to Groq for THIS call —
+    every other section that succeeds on Gemini in the same run is untouched."""
+    result = _call_gemini(system_prompt, user_prompt, max_tokens, _retry=_retry)
+    if result is not None:
+        return result
+
+    if os.environ.get("GROQ_API_KEY"):
+        print("Gemini failed for this section — falling back to Groq (openai/gpt-oss-120b) for this section only.")
+        result = call_groq(system_prompt, user_prompt, max_tokens)
+        if result is not None:
+            print("Groq fallback succeeded for this section.")
+            return result
+        print("Groq fallback also failed for this section.")
+    return None
 
 
 RSS_SOURCES = [
