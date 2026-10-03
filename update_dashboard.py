@@ -1161,13 +1161,34 @@ def should_refresh_monthly(prior_state, current_trigger_flags):
 
 
 def generate_monetary_fiscal_narrative(fiscal_debt_trillion, real_yield, headlines):
+    """The real-yield paragraph's arrow is COMPUTED from real_yield['delta']'s
+    actual sign, not hardcoded — rising real yields -> dollar-supportive
+    (▲ USD), falling -> dollar-negative (▼ USD). This prevents the label
+    contradicting the data underneath it (e.g. a falling-yield paragraph
+    stuck under a '▲ USD' header). Debt is always framed ▼ USD — rising
+    public debt is structurally dollar-negative regardless of direction,
+    so there's no sign to compute there."""
+    ry_direction = None
+    if real_yield and real_yield.get("delta") is not None:
+        ry_direction = "▲ USD" if real_yield["delta"] > 0 else "▼ USD" if real_yield["delta"] < 0 else None
+
     system_prompt = (
         "You write the 'Monetary & Fiscal Policy' section of a Q3 2026 institutional "
-        "fundamental analysis panel, for gold and USD. Two short paragraphs: one framed "
-        "'▲ USD' (near-term policy/rate factors), one '▼ USD' (structural fiscal factors). "
-        "Use ONLY the DATA given — never invent a number not listed. Confident, terse, "
-        "sell-side tone. Output plain HTML using only <b> and <br><br> for structure, "
-        "matching this exact format: '<b>▲ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
+        "fundamental analysis panel, for gold and USD. Write two short paragraphs. "
+        + (f"The FIRST paragraph covers the real yield data and MUST be labeled "
+           f"'{ry_direction}' — this label is already computed from the real yield's actual "
+           f"direction, not your choice; do not contradict it. If yields fell, explain why "
+           f"falling real yields argue dollar-negative, not dollar-supportive, and vice versa. "
+           if ry_direction else
+           "The FIRST paragraph covers the real yield data; if no real yield delta is given, "
+           "omit this paragraph entirely rather than guessing a direction. ")
+        + "The SECOND paragraph covers the fiscal debt data and MUST be labeled '▼ USD' "
+          "(structural, always dollar-negative framing, not conditional on a sign). "
+          "Use ONLY the DATA given — never invent a number not listed. Confident, terse, "
+          "sell-side tone. Output plain HTML using only <b> and <br><br> for structure, "
+        + (f"matching this exact format: '<b>{ry_direction}</b> — [sentence]<br><br>"
+           f"<b>▼ USD</b> — [sentence]'." if ry_direction else
+           "matching this exact format: '<b>▼ USD</b> — [sentence]'.")
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
     ry_line = f"10Y real yield: {real_yield['value']:.2f}% ({real_yield['delta']:+.2f})" if real_yield else "Real yield data unavailable"
@@ -1193,20 +1214,96 @@ def generate_geopolitical_narrative(headlines, risk_regime):
     return raw.strip() if raw else None
 
 
+# Keyword polarity, not AI judgment — a real headline must match one of
+# these before central-bank gold activity is mentioned at all. Buying/
+# accumulating reserves is a demand signal (bullish gold -> ▼ USD); selling/
+# reducing is the reverse (▲ USD). This is a blunt heuristic, not a
+# guarantee of catching every real story or avoiding every false positive —
+# worth tuning after watching it run against real headlines for a while.
+_CB_GOLD_BUY_KEYWORDS = ("adds gold", "buys gold", "gold reserves rise", "gold reserves climb",
+                          "increases gold reserves", "boosts gold holdings", "gold purchases",
+                          "accumulating gold", "raises gold reserves")
+_CB_GOLD_SELL_KEYWORDS = ("sells gold", "gold reserves fall", "gold reserves drop",
+                           "reduces gold reserves", "withdraws gold", "offloads gold",
+                           "cuts gold holdings", "gold reserves decline")
+
+
+def find_cb_gold_headline(headlines):
+    """Scans real fetched headlines for central bank gold reserve activity.
+    Returns (headline_text, direction) on a match, or None. Direction is
+    computed here in Python from simple keyword polarity — never chosen by
+    the AI — so this function decides the label the same way COT delta signs
+    decide the other two items' labels."""
+    for h in (headlines or []):
+        h_lower = h.lower()
+        if "gold" not in h_lower:
+            continue
+        if "reserve" not in h_lower and "central bank" not in h_lower:
+            continue
+        if any(kw in h_lower for kw in _CB_GOLD_SELL_KEYWORDS):
+            return (h, "▲ USD")
+        if any(kw in h_lower for kw in _CB_GOLD_BUY_KEYWORDS):
+            return (h, "▼ USD")
+    return None
+
+
 def generate_supply_demand_narrative(gold_cot, silver_cot, headlines):
+    """One item per metal from that metal's own COT delta sign (rising net
+    positioning -> ▼ USD, falling -> ▲ USD), PLUS an optional third item if
+    find_cb_gold_headline() matches a real central-bank gold reserve
+    headline today — its label is Python-computed from keyword polarity,
+    never AI-chosen. This replaces both the old hardcoded 'always ▼ USD'
+    design AND the old 'central bank reserve buying' claim that had no real
+    data behind it: that topic is now only ever mentioned when an actual
+    matching headline exists. If nothing has data (no COT, no CB headline),
+    returns None."""
+    def _direction(cot):
+        if not cot or cot.get("delta") is None or cot["delta"] == 0:
+            return None
+        return "▼ USD" if cot["delta"] > 0 else "▲ USD"
+
+    gold_dir = _direction(gold_cot)
+    silver_dir = _direction(silver_cot)
+    cb_match = find_cb_gold_headline(headlines)
+    if not gold_dir and not silver_dir and not cb_match:
+        return None
+
+    items_instruction = []
+    if gold_dir:
+        items_instruction.append(
+            f"One item labeled '{gold_dir}' about GOLD, explaining why its COT positioning "
+            f"change (given in DATA) argues that USD direction."
+        )
+    if silver_dir:
+        items_instruction.append(
+            f"One item labeled '{silver_dir}' about SILVER, explaining why its COT positioning "
+            f"change (given in DATA) argues that USD direction."
+        )
+    if cb_match:
+        cb_headline, cb_dir = cb_match
+        items_instruction.append(
+            f"One item labeled '{cb_dir}' summarizing the specific central-bank gold reserve "
+            f"headline given in DATA (and ONLY that headline's actual content — do not add a "
+            f"tonnage figure or country detail not stated in the headline itself)."
+        )
+
     system_prompt = (
         "You write the 'Supply & Demand (Gold & Silver)' section of a Q3 2026 institutional "
-        "fundamental analysis panel. Two short items, both framed '▼ USD' (structural demand "
-        "factors), covering central bank reserve buying and physical market supply/demand. "
-        "Use ONLY the DATA given — never invent a specific tonnage or deficit figure not listed. "
-        "Output plain HTML: '<b>▼ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
+        "fundamental analysis panel, for gold and USD. Write " + " ".join(items_instruction) + " "
+        "Each label is already computed from real data — do not contradict it. "
+        "Use ONLY the COT data and headline(s) given — never invent a tonnage figure, country, "
+        "or any statistic not explicitly present in DATA. Output plain HTML using only <b> and "
+        "<br><br>, one block per item, format: '<b>[LABEL]</b> — [sentence]'."
     )
     headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
     cot_line = ""
     if gold_cot: cot_line += f"Gold COT net: {gold_cot['net']:+,} ({gold_cot['delta']:+,} w/w). "
     if silver_cot: cot_line += f"Silver COT net: {silver_cot['net']:+,} ({silver_cot['delta']:+,} w/w)."
-    user_prompt = f"{cot_line}\nHeadlines: {headline_sample}"
-    raw = call_ai_model(system_prompt, user_prompt, max_tokens=200)
+    user_prompt = f"{cot_line}\n"
+    if cb_match:
+        user_prompt += f"Central bank gold reserve headline: \"{cb_match[0]}\"\n"
+    user_prompt += f"Headlines: {headline_sample}"
+    raw = call_ai_model(system_prompt, user_prompt, max_tokens=220)
     return raw.strip() if raw else None
 
 
@@ -1393,43 +1490,132 @@ def is_material_change(prior, current):
     return False
 
 
+def _parse_catalyst_json(raw):
+    """Shared parse step so both providers are held to the same bar.
+    Requires all 4 keys AND confidence == 'high' with a non-null catalyst to
+    count as success — 'low'/'none' confidence is treated the SAME as a
+    parse failure (returns None), not as a usable-but-weak result. This is
+    deliberate: a low-confidence guess is exactly the kind of loose
+    headline-to-regime connection that caused the original hallucination
+    bug, so it's rejected here rather than displayed. Returns None on any
+    failure (empty response, markdown-fenced junk, missing keys, or
+    insufficient confidence) — never fake placeholder content."""
+    if not raw:
+        return None
+    try:
+        cleaned = raw.strip().strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+        parsed = json.loads(cleaned)
+        if not all(k in parsed for k in ("catalyst", "confidence", "affects", "focus")):
+            return None
+        if parsed["confidence"] != "high" or not parsed["catalyst"]:
+            print(f"Catalyst confidence was '{parsed.get('confidence')}' (not 'high') — rejecting as unreliable, not displaying.")
+            return None
+        return parsed
+    except Exception as e:
+        print(f"Could not parse catalyst/focus AI response: {e}")
+    return None
+
+
 def generate_catalyst_and_focus(headlines, risk_regime, gold_cot, silver_cot):
     """AI-generated only when is_material_change() says something actually
-    shifted — otherwise the caller skips this entirely and keeps prior text."""
-    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:5]) or "none available"
+    shifted — otherwise the caller skips this entirely and keeps prior text.
+    The catalyst must be anchored to one real headline that the model is
+    confident genuinely matches today's regime/safe-haven reading — a
+    headline-less or low-confidence guess is rejected by _parse_catalyst_json
+    and treated as a failed generation (see below), not displayed as weak
+    content. Tries Gemini first, then Groq — Groq is tried on a Gemini call
+    failure, a parse failure, OR an insufficient-confidence result, since all
+    three mean 'nothing reliable came out of this attempt.' Returns None
+    (never fake placeholder text) if neither provider produces something
+    usable; the CALLER must check for None and leave the prior text in place
+    rather than write this into the page."""
+    headline_sample = "; ".join(f'"{h}"' for h in (headlines or [])[:8]) or "none available"
     system_prompt = (
-        "You write two short institutional dashboard fields based ONLY on the DATA given:\n"
-        "1. 'catalyst': the single most market-moving theme right now (under 12 words)\n"
-        "2. 'affects': 2-4 asset classes it impacts, comma-separated, from this list only: "
-        "Equities, Precious Metals, Energy, FX, Rates, Crypto\n"
-        "3. 'focus': the dominant macro tension this quarter, framed as 'X vs Y' (under 8 words)\n"
-        "Do not invent specific events not implied by the headlines. Output ONLY valid JSON: "
-        '{"catalyst": "...", "affects": "...", "focus": "..."}'
+        "You write dashboard fields using ONLY the DATA given. Never invent a "
+        "cause not present in the headlines.\n"
+        f"Regime: '{risk_regime['status']}' | Safe-Haven Flow: "
+        f"'{risk_regime['safehaven_display']}' | VIX: {risk_regime['vix_display']}\n"
+        "Reference only, do not repeat this text in your output: "
+        "'Dollar-Preferred' typically reflects a hawkish-Fed, "
+        "risk-off-but-USD-bid, or funding-stress theme. 'Flight-to-Safety' "
+        "typically reflects de-dollarization, debt/deficit concern, or "
+        "non-USD safe-haven demand.\n"
+        "1. 'catalyst': scan the headlines for ONE that plausibly matches that "
+        "theme. If found, summarize it in under 12 words. If none match, this "
+        "must be null.\n"
+        "2. 'confidence': 'high' only if a headline clearly and specifically "
+        "matches. 'low' for a loose/indirect connection. 'none' if nothing "
+        "relates (catalyst must be null in that case).\n"
+        "3. 'affects': 2-4 asset classes impacted, comma-separated, from this "
+        "list only: Equities, Precious Metals, Energy, FX, Rates, Crypto\n"
+        "4. 'focus': the dominant macro tension this quarter, framed as "
+        "'X vs Y' (under 8 words) — based on the regime/VIX context, this one "
+        "does not require a headline match.\n"
+        "Output ONLY valid JSON, nothing else — no markdown fences, no "
+        "preamble: "
+        '{"catalyst": "...", "confidence": "high|low|none", "affects": "...", "focus": "..."}'
     )
-    user_prompt = (
-        f"Headlines: {headline_sample}\n"
-        f"Risk regime: {risk_regime['status']}, VIX {risk_regime['vix_display']}, "
-        f"Safe-haven flow: {risk_regime['safehaven_display']}"
-    )
-    raw = call_ai_model(system_prompt, user_prompt, max_tokens=120)
-    if raw:
-        try:
-            cleaned = raw.strip().strip("`")
-            if cleaned.lower().startswith("json"):
-                cleaned = cleaned[4:].strip()
-            parsed = json.loads(cleaned)
-            if all(k in parsed for k in ("catalyst", "affects", "focus")):
-                return parsed
-        except Exception as e:
-            print(f"Could not parse catalyst/focus AI response: {e}")
-    return {
-        "catalyst": "AI generation unavailable this run",
-        "affects": "Equities, Precious Metals",
-        "focus": "Sticky Inflation vs Deficits",
-    }
+    user_prompt = f"Headlines: {headline_sample}"
+
+    # Attempt 1: Gemini (with its own internal 429/timeout retry, unchanged).
+    parsed = _parse_catalyst_json(_call_gemini(system_prompt, user_prompt, max_tokens=150))
+    if parsed:
+        return parsed
+
+    # Attempt 2: Groq. Reached on a Gemini call failure, a parse failure, OR
+    # an insufficient-confidence result — all three mean "nothing reliable,"
+    # so all three are worth retrying on a second provider before giving up.
+    if os.environ.get("GROQ_API_KEY"):
+        print("Gemini produced no high-confidence catalyst — trying Groq.")
+        parsed = _parse_catalyst_json(call_groq(system_prompt, user_prompt, max_tokens=150))
+        if parsed:
+            print("Groq fallback succeeded with a high-confidence catalyst.")
+            return parsed
+        print("Groq fallback also failed to produce a high-confidence catalyst.")
+
+    return None
+
+
+def compute_deterministic_catalyst(gold_price, silver_price, vix_data, dxy_data, real_yield, risk_regime):
+    """Zero-AI fallback for HIGH IMPACT CATALYST, used only when BOTH Gemini
+    and Groq fail (or return low-confidence) for generate_catalyst_and_focus.
+    Replaces a static placeholder string with real, live numbers already
+    fetched this run: picks whichever tracked instrument moved the most
+    TODAY (gold/silver/VIX/DXY pct_change — real day-over-day market
+    behavior, not invented wording), and pairs it with the Python-computed
+    risk regime label. Deterministic — same inputs always produce the same
+    output, no model involved. Returns None only if literally no price data
+    was fetched this run (nothing to report on at all)."""
+    candidates = []
+    if gold_price: candidates.append(("Gold", gold_price["pct_change"], "Precious Metals"))
+    if silver_price: candidates.append(("Silver", silver_price["pct_change"], "Precious Metals"))
+    if vix_data: candidates.append(("VIX", vix_data["pct_change"], "Equities, Rates"))
+    if dxy_data: candidates.append(("DXY", dxy_data["pct_change"], "FX"))
+    if not candidates:
+        return None
+
+    label, pct, asset_class = max(candidates, key=lambda c: abs(c[1]))
+    direction = "up" if pct > 0 else "down" if pct < 0 else "flat"
+    catalyst = f"{label} leads today's cross-asset move, {direction} {abs(pct):.2f}%"
+
+    affects = asset_class
+    if real_yield and real_yield.get("delta") is not None:
+        affects += ", Rates" if "Rates" not in affects else ""
+
+    focus = (f"{risk_regime['status']} — {risk_regime['safehaven_display']}"
+             if risk_regime else "Regime data unavailable this run")
+
+    return {"catalyst": catalyst, "confidence": "computed", "affects": affects, "focus": focus}
 
 
 def update_risk_gauge(soup, risk_regime, catalyst_data):
+    """catalyst_data may be None (AI generation failed this run, both
+    providers) — the numeric gauge and the state comment below are
+    Python-computed and must always update regardless; only the AI-written
+    catalyst/affects/driver text is skipped when there's nothing real to put
+    there, leaving whatever text was already in the box untouched."""
     box = soup.find("div", class_="risk-gauge-box")
     if box:
         status_el = box.find("div", class_="risk-status")
@@ -1441,14 +1627,15 @@ def update_risk_gauge(soup, risk_regime, catalyst_data):
             meta_el.string = (f"VIX: {risk_regime['vix_display']} · "
                                f"Credit Spreads: {risk_regime['credit_display']} · "
                                f"Safe-Haven Flow: {risk_regime['safehaven_display']}")
-    event_box = soup.find("div", class_="next-event-box")
-    if event_box:
-        title_el = event_box.find("div", style=lambda s: s and "font-weight:600" in s)
-        if title_el: title_el.string = catalyst_data["catalyst"]
-        affects_el = event_box.find("div", string=lambda t: t and "Affects:" in t)
-        if affects_el: affects_el.string = f"Affects: {catalyst_data['affects']}"
-        driver_el = event_box.find("div", string=lambda t: t and "Primary Driver:" in t)
-        if driver_el: driver_el.string = f"Primary Driver: {catalyst_data['focus']}"
+    if catalyst_data:
+        event_box = soup.find("div", class_="next-event-box")
+        if event_box:
+            title_el = event_box.find("div", style=lambda s: s and "font-weight:600" in s)
+            if title_el: title_el.string = catalyst_data["catalyst"]
+            affects_el = event_box.find("div", string=lambda t: t and "Affects:" in t)
+            if affects_el: affects_el.string = f"Affects: {catalyst_data['affects']}"
+            driver_el = event_box.find("div", string=lambda t: t and "Primary Driver:" in t)
+            if driver_el: driver_el.string = f"Primary Driver: {catalyst_data['focus']}"
     # embed the state for next run's materiality check
     new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw']})} ")
     old_comment = soup.find(string=lambda t: isinstance(t, Comment) and "risk_state:" in t)
@@ -1500,6 +1687,13 @@ def generate_updated_dashboard():
     if is_material_change(prior_state, risk_regime):
         print(f"Risk regime materially changed (prior: {prior_state}) — regenerating catalyst/focus via AI.")
         catalyst_data = generate_catalyst_and_focus(headlines, risk_regime, gold_cot, silver_cot)
+        if not catalyst_data:
+            print("Gemini and Groq both failed for catalyst/focus — falling back to a deterministic, "
+                  "data-computed catalyst (today's biggest real mover, no AI, no static wording).")
+            catalyst_data = compute_deterministic_catalyst(gold_price, silver_price, vix_data, dxy_data,
+                                                              real_yield, risk_regime)
+            if not catalyst_data:
+                print("WARNING: No price data available for deterministic fallback either — leaving prior catalyst text unchanged.")
         update_risk_gauge(soup, risk_regime, catalyst_data)
     else:
         print("No material change in risk regime — updating live numbers only, keeping existing catalyst/focus text.")
