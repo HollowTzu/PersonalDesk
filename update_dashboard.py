@@ -1143,10 +1143,14 @@ def update_etf_confluence_section(soup, gold_cot, gold_cvd, gold_quadrant,
         print("ETF/COT confluence unchanged — keeping existing narrative.")
 
 
-def should_refresh_monthly(prior_state, current_trigger_flags):
-    """Monthly narrative cadence, but responsive within the month: refresh if
-    28+ days have passed since the last generation, OR if any of the passed
-    trigger flags (e.g. risk regime, real yield scenario) changed."""
+def should_refresh_narratives(prior_state, current_trigger_flags):
+    """Daily narrative cadence (was 28 days) — refresh if 1+ full day has
+    passed since the last generation, OR if any trigger flag (risk regime,
+    real yield scenario) changed within the day. Shortened from monthly now
+    that Gemini+Groq combined free-tier capacity (~1,000+ req/day each) is
+    nowhere near the binding constraint for ~4 calls/day this adds — the
+    original 28-day window existed purely to conserve a single provider's
+    quota, which is no longer the limiting factor."""
     if prior_state is None:
         return True
     try:
@@ -1154,7 +1158,7 @@ def should_refresh_monthly(prior_state, current_trigger_flags):
         days_elapsed = (datetime.utcnow() - last_gen).days
     except Exception:
         days_elapsed = 999
-    if days_elapsed >= 28:
+    if days_elapsed >= 1:
         return True
     prior_flags = prior_state.get("flags", {})
     return prior_flags != current_trigger_flags
@@ -1332,11 +1336,11 @@ def update_fundamental_narratives(soup, fiscal_debt_trillion, real_yield, risk_r
         "real_yield_delta_sign": (1 if real_yield and real_yield["delta"] > 0 else -1 if real_yield else 0),
     }
     prior = get_prior_state(soup, "fundamental_narrative_state")
-    if not should_refresh_monthly(prior, trigger_flags):
-        print("Fundamental Analysis narratives unchanged this run (within monthly window, no material trigger).")
+    if not should_refresh_narratives(prior, trigger_flags):
+        print("Fundamental Analysis narratives unchanged this run (within today's window, no material trigger).")
         return
 
-    print("Refreshing Fundamental Analysis narratives (monthly window elapsed or material trigger fired).")
+    print("Refreshing Fundamental Analysis narratives (daily window elapsed or material trigger fired).")
 
     all_succeeded = True
 
@@ -1479,6 +1483,10 @@ def get_prior_risk_state(soup):
 
 
 def is_material_change(prior, current):
+    """Regime status flip or VIX move >=2.0 still trigger immediately, as
+    before. Added: a daily ceiling, same reasoning as should_refresh_narratives
+    — this box could previously go indefinitely on a quiet market since it
+    had no time-based trigger at all, only state flips."""
     if prior is None:
         return True  # no prior state recorded — always generate the first time
     if prior.get("status") != current["status"]:
@@ -1487,6 +1495,12 @@ def is_material_change(prior, current):
     if prior_vix is not None and current["vix_raw"] is not None:
         if abs(current["vix_raw"] - prior_vix) >= 2.0:
             return True
+    try:
+        last_gen = datetime.fromisoformat(prior.get("generated_at", ""))
+        if (datetime.utcnow() - last_gen).days >= 1:
+            return True
+    except Exception:
+        return True  # no valid timestamp recorded — treat as due for refresh
     return False
 
 
@@ -1637,7 +1651,7 @@ def update_risk_gauge(soup, risk_regime, catalyst_data):
             driver_el = event_box.find("div", string=lambda t: t and "Primary Driver:" in t)
             if driver_el: driver_el.string = f"Primary Driver: {catalyst_data['focus']}"
     # embed the state for next run's materiality check
-    new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw']})} ")
+    new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw'], 'generated_at': datetime.utcnow().isoformat()})} ")
     old_comment = soup.find(string=lambda t: isinstance(t, Comment) and "risk_state:" in t)
     if old_comment:
         old_comment.replace_with(new_comment)
@@ -1708,7 +1722,11 @@ def generate_updated_dashboard():
                 meta_el.string = (f"VIX: {risk_regime['vix_display']} · "
                                    f"Credit Spreads: {risk_regime['credit_display']} · "
                                    f"Safe-Haven Flow: {risk_regime['safehaven_display']}")
-        new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw']})} ")
+        # generated_at is carried forward UNCHANGED from prior_state here —
+        # this branch means no actual regeneration happened, so resetting it
+        # would make is_material_change()'s daily-elapsed check never fire.
+        carried_generated_at = prior_state.get("generated_at") if prior_state else datetime.utcnow().isoformat()
+        new_comment = Comment(f" risk_state:{json.dumps({'status': risk_regime['status'], 'vix_raw': risk_regime['vix_raw'], 'generated_at': carried_generated_at})} ")
         old_comment = soup.find(string=lambda t: isinstance(t, Comment) and "risk_state:" in t)
         if old_comment:
             old_comment.replace_with(new_comment)
