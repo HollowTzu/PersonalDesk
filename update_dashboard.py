@@ -1177,7 +1177,7 @@ def generate_monetary_fiscal_narrative(fiscal_debt_trillion, real_yield, headlin
         ry_direction = "▲ USD" if real_yield["delta"] > 0 else "▼ USD" if real_yield["delta"] < 0 else None
 
     system_prompt = (
-        "You write the 'Monetary & Fiscal Policy' section of a Q3 2026 institutional "
+        "You write the 'Monetary & Fiscal Policy' section of a Q4 2026 institutional "
         "fundamental analysis panel, for gold and USD. Write two short paragraphs. "
         + (f"The FIRST paragraph covers the real yield data and MUST be labeled "
            f"'{ry_direction}' — this label is already computed from the real yield's actual "
@@ -1207,7 +1207,7 @@ def generate_monetary_fiscal_narrative(fiscal_debt_trillion, real_yield, headlin
 
 def generate_geopolitical_narrative(headlines, risk_regime):
     system_prompt = (
-        "You write the 'Geopolitical Risk & Sentiment' section of a Q3 2026 institutional "
+        "You write the 'Geopolitical Risk & Sentiment' section of a Q4 2026 institutional "
         "fundamental analysis panel. Two short items: one '▲ USD', one '▼ USD', reflecting "
         "genuine tension in current conditions. Use ONLY the DATA given. Confident, terse tone. "
         "Output plain HTML: '<b>▲ USD</b> — [sentence]<br><br><b>▼ USD</b> — [sentence]'."
@@ -1292,7 +1292,7 @@ def generate_supply_demand_narrative(gold_cot, silver_cot, headlines):
         )
 
     system_prompt = (
-        "You write the 'Supply & Demand (Gold & Silver)' section of a Q3 2026 institutional "
+        "You write the 'Supply & Demand (Gold & Silver)' section of a Q4 2026 institutional "
         "fundamental analysis panel, for gold and USD. Write " + " ".join(items_instruction) + " "
         "Each label is already computed from real data — do not contradict it. "
         "Use ONLY the COT data and headline(s) given — never invent a tonnage figure, country, "
