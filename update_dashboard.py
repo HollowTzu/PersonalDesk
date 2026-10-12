@@ -342,7 +342,13 @@ def call_ai_model(system_prompt, user_prompt, max_tokens=200, _retry=True):
 
 
 RSS_SOURCES = [
-    ("Yahoo Finance", "https://finance.yahoo.com/news/rssindex"),
+    # Old URL (finance.yahoo.com/news/rssindex) started 404ing as of Oct 2026 —
+    # Yahoo retired it. This per-ticker feed was still live as of Oct 2026;
+    # ^GSPC (S&P 500) pulls broad market news, not just one stock.
+    # UNVERIFIED from inside this container (robots.txt blocked a direct
+    # test fetch) — confirm this actually returns headlines on the next
+    # real Action run before trusting it long-term.
+    ("Yahoo Finance", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC&region=US&lang=en-US"),
     ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/topstories/"),
     ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
     ("FXStreet", "https://www.fxstreet.com/rss"),
